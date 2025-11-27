@@ -1,10 +1,11 @@
-import type { KnownBlock } from '@slack/types'
+import type { KnownBlock, ModalView } from '@slack/types'
 import type { Workflow } from '../database/workflows'
 import { getWorkflowSteps } from '../utils/workflows'
 import type { WorkflowStep } from './execute'
 import type { WorkflowStepMap } from './steps'
 import steps from './steps'
 import slack from '../clients/slack'
+import { truncateText } from '../utils/formatting'
 
 export async function updateHomeTab(workflow: Workflow, user: string) {
   if (!workflow.access_token) return
@@ -24,8 +25,8 @@ export async function updateHomeTab(workflow: Workflow, user: string) {
 export async function generateWorkflowEditView(
   workflow: Workflow
 ): Promise<KnownBlock[]> {
-  const stepBlocks = getWorkflowSteps(workflow).flatMap((s) =>
-    generateStepEditBlocks(s, workflow)
+  const stepBlocks = getWorkflowSteps(workflow).flatMap((s, i) =>
+    generateStepEditBlocks(s, i, workflow)
   )
 
   return [
@@ -50,52 +51,39 @@ export async function generateWorkflowEditView(
       ],
     },
     { type: 'divider' },
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: 'Steps' },
+    },
     ...stepBlocks,
   ]
 }
 
 function generateStepEditBlocks<T extends keyof WorkflowStepMap>(
   step: WorkflowStep<T>,
+  index: number,
   workflow: Workflow
 ): KnownBlock[] {
   const id = step.type_id
   const spec = steps[id]
 
-  const inputBlocks = Object.entries(spec.inputs).flatMap(([key, def]) => {
-    return [
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: `${def.name}${def.required ? ' _(required)_' : ''}\nCurrent: ${
-            step.inputs[key as keyof (typeof step)['inputs']]
-          }`,
-        },
-        accessory: {
-          type: 'static_select',
-          action_id: `update_input:${workflow.id}:${step.id}:${key}`,
-          option_groups: [
-            {
-              label: { type: 'plain_text', text: 'Dynamic content' },
-              options: [
-                {
-                  text: {
-                    type: 'plain_text',
-                    text: 'User that started this workflow',
-                  },
-                  value: '$!{ctx.trigger_user_id}',
-                },
-              ],
-            },
-          ],
-        },
-      },
-    ] satisfies KnownBlock[]
-  })
+  let text = `${index + 1}. *${spec.name}*`
+
+  for (const [key, arg] of Object.entries(spec.inputs)) {
+    text += `\n${arg.name}: \`${step.inputs[key as keyof typeof step.inputs]}\``
+  }
 
   return [
-    { type: 'section', text: { type: 'mrkdwn', text: `*${spec.name}*` } },
-    ...inputBlocks,
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text },
+      accessory: {
+        type: 'button',
+        text: { type: 'plain_text', text: 'Edit' },
+        value: JSON.stringify({ workflowId: workflow.id, stepId: step.id }),
+        action_id: 'edit_step',
+      },
+    },
   ]
 }
 
@@ -124,4 +112,59 @@ export async function generateWorkflowView(
       ],
     },
   ]
+}
+
+export async function generateStepEditView(
+  workflow: Workflow,
+  stepIndex: number
+): Promise<ModalView> {
+  const step = getWorkflowSteps(workflow)[stepIndex]!
+
+  const spec = steps[step.type_id as keyof WorkflowStepMap]!
+
+  const inputBlocks = Object.entries(spec.inputs).flatMap(([key, def]) => {
+    return [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `${def.name}${
+            def.required ? ' _(required)_' : ''
+          }\nCurrent: \`${step.inputs[key]}\``,
+        },
+        accessory: {
+          type: 'static_select',
+          action_id: `update_input:${workflow.id}:${step.id}:${key}`,
+          option_groups: [
+            {
+              label: { type: 'plain_text', text: 'Dynamic content' },
+              options: [
+                {
+                  text: {
+                    type: 'plain_text',
+                    text: 'User that started this workflow',
+                  },
+                  value: '$!{ctx.trigger_user_id}',
+                },
+                { text: { type: 'plain_text', text: 'test' }, value: 'test' },
+              ],
+            },
+          ],
+        },
+      },
+    ] satisfies KnownBlock[]
+  })
+
+  return {
+    type: 'modal',
+    title: {
+      type: 'plain_text',
+      text: truncateText(`Editing step ${stepIndex + 1}`, 24),
+    },
+    blocks: [
+      { type: 'header', text: { type: 'plain_text', text: spec.name } },
+      { type: 'section', text: { type: 'mrkdwn', text: '*Inputs*' } },
+      ...inputBlocks,
+    ],
+  }
 }
