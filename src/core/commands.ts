@@ -1,12 +1,14 @@
 import type { SlashCommand } from '@slack/bolt'
-import slack from '../clients/slack'
 import type {
   AppsManifestCreateArguments,
   AppsManifestCreateResponse,
 } from '@slack/web-api'
+import slack from '../clients/slack'
+import { getConfigToken } from '../database/config_tokens'
 import { addWorkflow } from '../database/workflows'
 import { respond } from '../utils/slack'
-import { getConfigToken } from '../database/config_tokens'
+
+const { EXTERNAL_URL } = process.env
 
 export async function handleCommand(payload: SlashCommand) {
   if (payload.command.endsWith('winterflows-create')) {
@@ -42,6 +44,7 @@ async function handleCreateCommand(payload: SlashCommand) {
     await addWorkflow({
       name,
       app_id: app.app_id!,
+      creator_user_id: payload.user_id,
       client_id: app.credentials!.client_id!,
       client_secret: app.credentials!.client_secret!,
       signing_secret: app.credentials!.signing_secret!,
@@ -66,18 +69,27 @@ function generateManifest(
       description: 'Workflow created by Winterflows',
     },
     features: {
+      app_home: {
+        home_tab_enabled: true,
+        messages_tab_enabled: false,
+        messages_tab_read_only_enabled: true,
+      },
       bot_user: {
         display_name: name,
         always_online: false,
       },
     },
     oauth_config: {
-      redirect_urls: ['https://winterflows-dev.davidwhy.me/oauth/callback'],
+      redirect_urls: [`${EXTERNAL_URL}/oauth/callback`],
       scopes: {
         bot: ['chat:write', 'chat:write.customize'],
       },
     },
     settings: {
+      event_subscriptions: {
+        request_url: `${EXTERNAL_URL}/slack/events`,
+        bot_events: ['app_home_opened'],
+      },
       org_deploy_enabled: false,
       socket_mode_enabled: false,
       token_rotation_enabled: false,

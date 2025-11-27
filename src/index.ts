@@ -1,10 +1,11 @@
 import type { EnvelopedEvent, SlashCommand } from '@slack/bolt'
 import type { SlackEvent } from '@slack/types'
-import { handleCoreEvent } from './core/events'
-import { getVerifiedData } from './signature'
-import { handleCommand } from './core/commands'
 import slack from './clients/slack'
+import { handleCommand } from './core/commands'
+import { handleCoreEvent } from './core/events'
 import { getWorkflowByAppId, updateWorkflow } from './database/workflows'
+import { getVerifiedData } from './signature'
+import { handleWorkflowEvent } from './workflows/events'
 
 const PORT = process.env.PORT || '8000'
 const { SLACK_APP_ID } = process.env
@@ -49,6 +50,21 @@ Bun.serve({
           handleCoreEvent({ event, envelope })
         } else {
           // handle workflow event
+          const workflow = await getWorkflowByAppId(appId)
+          if (!workflow) {
+            console.warn('Request to unknown app', unsafeData)
+            return NOT_FOUND
+          }
+
+          const data = await getVerifiedData(req, workflow.signing_secret)
+          if (!data.success) {
+            console.warn(`Signature verification failed:`, unsafeData)
+            return NOT_FOUND
+          }
+          const envelope: EnvelopedEvent = JSON.parse(data.data)
+          const event = envelope.event as SlackEvent
+
+          handleWorkflowEvent({ event, envelope, workflow })
         }
 
         return new Response()

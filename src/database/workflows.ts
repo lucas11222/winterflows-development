@@ -3,11 +3,13 @@ import { sql } from 'bun'
 export interface Workflow {
   id: number
   name: string
+  creator_user_id: string
   app_id: string
   client_id: string
   client_secret: string
   signing_secret: string
   access_token: string | null
+  steps: string
 }
 
 export async function getWorkflowById(id: number) {
@@ -22,7 +24,7 @@ export async function getWorkflowByAppId(appId: string) {
   return result[0]
 }
 
-export async function addWorkflow(workflow: Omit<Workflow, 'id'>) {
+export async function addWorkflow(workflow: Omit<Workflow, 'id' | 'steps'>) {
   const result = await sql<[Workflow]>`INSERT INTO workflows ${sql(workflow)}`
   return result[0]
 }
