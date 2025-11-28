@@ -292,7 +292,7 @@ function getStepInputAccessory(
         label: { type: 'plain_text', text: 'Workflow info' },
         options: [
           {
-            text: { type: 'plain_text', text: 'Person who used this workflow' },
+            text: { type: 'plain_text', text: 'User who used this workflow' },
             value: JSON.stringify({
               type: 'text',
               text: '$!{ctx.trigger_user_id}',

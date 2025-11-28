@@ -5,6 +5,7 @@ import {
   type WorkflowExecution,
 } from '../database/workflow_executions'
 import { getWorkflowById, type Workflow } from '../database/workflows'
+import { replaceRichText, replaceText } from '../utils/slack'
 import { getWorkflowSteps } from '../utils/workflows'
 import type { ExecutionContext } from './context'
 import type { WorkflowStepMap } from './steps'
@@ -58,17 +59,22 @@ export async function proceedWorkflow(execution: WorkflowExecution) {
   const spec = stepSpecs[step.type_id as keyof WorkflowStepMap]
 
   const replacements: Record<string, string> = {
-    'ctx.trigger_user_id': state.trigger_user_id,
+    '$!{ctx.trigger_user_id}': state.trigger_user_id,
+    '$!{ctx.trigger_user_ping}': `<@${state.trigger_user_id}>`,
   }
   for (const [key, value] of Object.entries(state.outputs)) {
-    replacements[`outputs.${key}`] = value
+    replacements[`$!{outputs.${key}}`] = value
   }
 
   const inputs: Record<string, string> = {}
-  for (const key in spec.inputs) {
+  for (const [key, inputSpec] of Object.entries(spec.inputs)) {
     let value = step.inputs[key]!
-    for (const [old, replacement] of Object.entries(replacements)) {
-      value = value.replaceAll(`$!{${old}}`, replacement)
+    if (inputSpec.type === 'rich_text') {
+      value =
+        value &&
+        JSON.stringify(replaceRichText(JSON.parse(value), replacements))
+    } else {
+      value = replaceText(value, replacements)
     }
     inputs[key] = value
   }

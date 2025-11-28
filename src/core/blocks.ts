@@ -16,6 +16,8 @@ export async function updateCoreHomeTab(userId: string, search?: string) {
   })
 }
 
+const MAX_WORKFLOWS_PER_PAGE = 25
+
 async function generateCoreHomeView(
   workflows: Workflow[],
   search?: string
@@ -93,11 +95,7 @@ async function generateCoreHomeView(
       element: {
         type: 'plain_text_input',
         action_id: 'search_workflows',
-        placeholder: {
-          type: 'plain_text',
-          text: 'Search your workflows...',
-          emoji: true,
-        },
+        placeholder: { type: 'plain_text', text: 'Type here to search' },
         initial_value: search || undefined,
         dispatch_action_config: {
           trigger_actions_on: ['on_character_entered'],
@@ -114,7 +112,16 @@ async function generateCoreHomeView(
         },
       })
     }
-    for (const workflow of filteredWorkflows) {
+    if (filteredWorkflows.length > MAX_WORKFLOWS_PER_PAGE) {
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '_Only the first 25 workflows shown. To see more, use the search bar above._',
+        },
+      })
+    }
+    for (const workflow of filteredWorkflows.slice(0, MAX_WORKFLOWS_PER_PAGE)) {
       blocks.push(
         { type: 'header', text: { type: 'plain_text', text: workflow.name } },
         {

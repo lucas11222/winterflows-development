@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS workflow_executions (
     steps TEXT NOT NULL,
     step_index INTEGER NOT NULL DEFAULT 0, -- index of next step
     state TEXT NOT NULL,
-    FOREIGN KEY (workflow_id) REFERENCES workflows (id)
+    FOREIGN KEY (workflow_id) REFERENCES workflows (id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_workflow_executions_workflow_id ON workflow_executions (workflow_id);
 
