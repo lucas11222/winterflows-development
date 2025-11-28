@@ -45,6 +45,12 @@ export async function handleCoreInteraction(interaction: SlackAction) {
           'No app config token was set, or it has expired. Please contact the devs for assistance.'
         )
 
+      if (workflow.access_token)
+        await slack.apps.uninstall({
+          token: workflow.access_token,
+          client_id: workflow.client_id,
+          client_secret: workflow.client_secret,
+        })
       await Promise.all([
         deleteWorkflowById(id),
         slack.apps.manifest.delete({

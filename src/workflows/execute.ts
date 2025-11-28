@@ -27,6 +27,8 @@ export interface ExecutionState {
 export async function startWorkflow(workflow: Workflow, user: string) {
   if (!workflow.access_token) return
 
+  console.log(`Workflow ${workflow.id} started by ${user}`)
+
   const execution = await addWorkflowExecution({
     workflow_id: workflow.id,
     steps: workflow.steps,
