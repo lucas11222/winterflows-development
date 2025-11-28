@@ -1,4 +1,6 @@
 import slack from '../clients/slack'
+import { createTimeTrigger } from '../triggers/create'
+import { registerTriggerFunction } from '../triggers/functions'
 import type { ExecutionContext } from './context'
 import { advanceWorkflow } from './execute'
 
@@ -72,10 +74,19 @@ async function delayWorkflow(ctx: ExecutionContext, { ms }: { ms: string }) {
   if (isNaN(time)) {
     throw new Error(`Failed to parse sleep duration \`${ms}\``)
   }
-  setTimeout(() => advanceWorkflow(ctx.execution.id, ctx.step_id, {}), time)
+  await createTimeTrigger(Date.now() + time, {
+    execution_id: ctx.execution.id,
+    func: 'steps.delay.restart',
+    details: ctx.step_id,
+  })
   return PENDING
   return {}
 }
+
+registerTriggerFunction('steps.delay.restart', async (trigger) => {
+  const stepId = trigger.details!
+  await advanceWorkflow(trigger.execution_id, stepId, {})
+})
 
 // end steps
 

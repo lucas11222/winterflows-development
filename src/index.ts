@@ -3,16 +3,17 @@ import type { SlackEvent } from '@slack/types'
 import slack from './clients/slack'
 import { handleCommand } from './core/commands'
 import { handleCoreEvent } from './core/events'
+import { handleCoreInteraction } from './core/interaction'
 import {
   getWorkflowByAppId,
   getWorkflowById,
   updateWorkflow,
 } from './database/workflows'
 import { getVerifiedData } from './signature'
+import { timeTriggerTask } from './triggers/task'
+import { getActiveConfigToken } from './utils/slack'
 import { handleWorkflowEvent } from './workflows/events'
 import { handleInteraction } from './workflows/interaction'
-import { handleCoreInteraction } from './core/interaction'
-import { getActiveConfigToken } from './utils/slack'
 
 const PORT = process.env.PORT || '8000'
 const { SLACK_APP_ID } = process.env
@@ -203,5 +204,6 @@ Bun.serve({
 
 setInterval(getActiveConfigToken, 30 * 60 * 1000)
 getActiveConfigToken()
+timeTriggerTask()
 
 console.log(`Server started on http://localhost:${PORT}`)
