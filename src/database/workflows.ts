@@ -45,3 +45,7 @@ export async function updateWorkflow(workflow: Workflow) {
   const payload = { ...workflow, id: undefined }
   await sql`UPDATE workflows SET ${sql(payload)} WHERE id = ${workflow.id}`
 }
+
+export async function deleteWorkflowById(id: number) {
+  await sql`DELETE FROM workflows WHERE id = ${id}`
+}

@@ -1,8 +1,10 @@
 import type { HomeView, KnownBlock } from '@slack/types'
 import { getWorkflowsByCreator, type Workflow } from '../database/workflows'
 import slack from '../clients/slack'
+import { truncateText } from '../utils/formatting'
 
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN!
+const WORKFLOW_APP_SCOPES = process.env.WORKFLOW_APP_SCOPES!
 
 export async function updateCoreHomeTab(userId: string, search?: string) {
   const workflows = await getWorkflowsByCreator(userId)
@@ -19,7 +21,9 @@ async function generateCoreHomeView(
   search?: string
 ): Promise<HomeView> {
   const filteredWorkflows = workflows.filter(
-    (w) => !search || w.name.toLowerCase().includes(search.toLowerCase())
+    (w) =>
+      (!search || w.name.toLowerCase().includes(search.toLowerCase())) &&
+      w.access_token
   )
 
   const blocks: KnownBlock[] = [
@@ -35,8 +39,44 @@ async function generateCoreHomeView(
       },
     },
     { type: 'divider' },
-    { type: 'header', text: { type: 'plain_text', text: 'Your workflows' } },
   ]
+
+  if (!search) {
+    const unauthedWorkflows = workflows.filter((w) => !w.access_token)
+    if (unauthedWorkflows.length) {
+      blocks.push(
+        {
+          type: 'header',
+          text: { type: 'plain_text', text: 'Unauthorized workflows' },
+        },
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text:
+              'Please click on the links below to install these workflow apps to activate them!\n' +
+              unauthedWorkflows
+                .map(
+                  (w) =>
+                    `*${
+                      w.name
+                    }*: <https://slack.com/oauth/v2/authorize?client_id=${
+                      w.client_id
+                    }&scope=${encodeURIComponent(WORKFLOW_APP_SCOPES)}&state=${
+                      w.app_id
+                    }|install>`
+                )
+                .join('\n'),
+          },
+        }
+      )
+    }
+  }
+
+  blocks.push({
+    type: 'header',
+    text: { type: 'plain_text', text: 'Your workflows' },
+  })
 
   if (!workflows.length) {
     blocks.push({
@@ -59,14 +99,19 @@ async function generateCoreHomeView(
           emoji: true,
         },
         initial_value: search || undefined,
-        dispatch_action_config: { trigger_actions_on: ['on_enter_pressed'] },
+        dispatch_action_config: {
+          trigger_actions_on: ['on_character_entered'],
+        },
       },
       dispatch_action: true,
     })
     if (!filteredWorkflows.length) {
       blocks.push({
         type: 'section',
-        text: { type: 'plain_text', text: 'No matching workflows found.' },
+        text: {
+          type: 'plain_text',
+          text: 'No matching and installed workflows found.',
+        },
       })
     }
     for (const workflow of filteredWorkflows) {
@@ -90,6 +135,26 @@ async function generateCoreHomeView(
               action_id: 'run_workflow_home',
               value: JSON.stringify({ id: workflow.id }),
               style: 'primary',
+            },
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: 'Delete' },
+              action_id: 'delete_workflow',
+              value: JSON.stringify({ id: workflow.id }),
+              style: 'danger',
+              confirm: {
+                title: {
+                  type: 'plain_text',
+                  text: truncateText(`Delete "${workflow.name}"`, 100),
+                },
+                text: {
+                  type: 'mrkdwn',
+                  text: 'Are you sure you want to delete this workflow? This cannot be undone.',
+                },
+                confirm: { type: 'plain_text', text: 'Delete' },
+                deny: { type: 'plain_text', text: 'Cancel' },
+                style: 'danger',
+              },
             },
           ],
         }
