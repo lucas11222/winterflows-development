@@ -7,11 +7,13 @@ import slack from '../clients/slack'
 import { addWorkflow } from '../database/workflows'
 import { getActiveConfigToken, respond } from '../utils/slack'
 
-const { EXTERNAL_URL } = process.env
+const { EXTERNAL_URL, SLACK_APP_ID } = process.env
 
 export async function handleCommand(payload: SlashCommand) {
   if (payload.command.endsWith('winterflows-create')) {
     return await handleCreateCommand(payload)
+  } else if (payload.command.endsWith('winterflows')) {
+    return await handleRootCommand()
   }
   return ''
 }
@@ -98,4 +100,15 @@ function generateManifest(
       token_rotation_enabled: false,
     },
   }
+}
+
+async function handleRootCommand() {
+  return Response.json({
+    text: `\
+:hyper-dino-wave: Hi, and welcome to Winterflows!
+
+I am a replacement to Slack's workflows, since the winter of Slack workflows will soon dawn upon us...
+
+To get started, <slack://app?id=${SLACK_APP_ID}|visit my app home>, or use the \`/winterflows-create\` command to create your first workflow!`,
+  })
 }

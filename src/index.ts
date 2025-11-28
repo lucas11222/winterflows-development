@@ -91,7 +91,9 @@ Bun.serve({
 
         const res = await handleCommand(payload)
 
-        return new Response(res)
+        return typeof res === 'string'
+          ? new Response(res)
+          : res || new Response()
       },
     },
 
