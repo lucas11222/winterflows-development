@@ -135,7 +135,8 @@ function generateWorkflowStepBlocks<T extends keyof WorkflowStepMap>(
     text += `${index + 1}. *${spec.name}*`
 
     for (const [key, arg] of Object.entries(spec.inputs)) {
-      text += `\n${arg.name}: \`${step.inputs[key]}\``
+      const value = step.inputs[key] ? `\`${step.inputs[key]}\`` : '<no value>'
+      text += `\n${arg.name}: ${value}`
     }
   } else {
     text += `${index + 1}. This step no longer exists. Please remove it.`
