@@ -8,10 +8,10 @@ import type {
 import type { Workflow } from '../database/workflows'
 import { getWorkflowSteps } from '../utils/workflows'
 import type { WorkflowStep } from './execute'
-import type { WorkflowStepMap } from './steps'
+import type { DataType, WorkflowStepMap } from './steps'
 import steps from './steps'
 import slack from '../clients/slack'
-import { truncateText } from '../utils/formatting'
+import { generateRandomId, truncateText } from '../utils/formatting'
 
 const { EXTERNAL_URL, SLACK_APP_ID } = process.env
 
@@ -86,15 +86,40 @@ export async function generateWorkflowEditView(
             text: ':heavy_plus_sign: Add a step',
             emoji: true,
           },
-          options: Object.entries(steps).map(([id, spec]) => ({
-            text: { type: 'plain_text', text: spec.name },
-            value: JSON.stringify({ w: workflow.id, s: id }),
-          })),
+          option_groups: getStepOptionGroups(),
         },
       ],
     },
     ...stepBlocks,
   ]
+}
+
+function getStepOptionGroups() {
+  const groups: Record<
+    string,
+    { label: PlainTextElement; options: PlainTextOption[] }
+  > = {}
+
+  for (const [id, spec] of Object.entries(steps)) {
+    const group =
+      groups[spec.category] ||
+      (groups[spec.category] = {
+        label: { type: 'plain_text', text: spec.category },
+        options: [],
+      })
+    group.options.push({
+      text: { type: 'plain_text', text: spec.name },
+      value: id,
+    })
+  }
+
+  const groupArray = Object.values(groups)
+  groupArray.sort((a, b) => a.label.text.localeCompare(b.label.text))
+  for (const group of groupArray) {
+    group.options.sort((a, b) => a.text.text.localeCompare(b.text.text))
+  }
+
+  return groupArray
 }
 
 function generateWorkflowStepBlocks<T extends keyof WorkflowStepMap>(
@@ -220,18 +245,7 @@ function generateStepInputBlocks(
 ): KnownBlock[] {
   const workflowSteps = getWorkflowSteps(workflow)
   const step = workflowSteps[index]!
-  const spec = steps[step.type_id as keyof WorkflowStepMap]
-  if (!spec) {
-    return [
-      {
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: 'This step no longer exists. Please remove it.',
-        },
-      },
-    ]
-  }
+  const spec = steps[step.type_id as keyof WorkflowStepMap]!
   const input = spec.inputs[inputKey]!
   const currentValue = step.inputs[inputKey]!
 
@@ -241,6 +255,7 @@ function generateStepInputBlocks(
   if (input.type === 'user' && !currentValue.startsWith('$')) {
     blocks.push({
       type: 'input',
+      block_id: generateRandomId(),
       label: { type: 'plain_text', text: ' ' },
       element: {
         type: 'users_select',
@@ -252,6 +267,7 @@ function generateStepInputBlocks(
   if (input.type === 'channel' && !currentValue.startsWith('$')) {
     blocks.push({
       type: 'input',
+      block_id: generateRandomId(),
       label: { type: 'plain_text', text: ' ' },
       element: {
         type: 'conversations_select',
@@ -264,6 +280,7 @@ function generateStepInputBlocks(
   if (input.type === 'rich_text') {
     blocks.push({
       type: 'input',
+      block_id: generateRandomId(),
       label: { type: 'plain_text', text: ' ' },
       element: {
         type: 'rich_text_input',
@@ -277,6 +294,7 @@ function generateStepInputBlocks(
   if (input.type === 'text') {
     blocks.push({
       type: 'input',
+      block_id: generateRandomId(),
       label: { type: 'plain_text', text: ' ' },
       element: {
         type: 'plain_text_input',
@@ -284,6 +302,30 @@ function generateStepInputBlocks(
         action_id: actionId,
       },
     })
+  }
+  if (input.type === 'rich_text' || input.type === 'text') {
+    const { groups, initial } = getTokenOptionGroups(
+      workflowSteps.slice(0, index),
+      input.type === 'rich_text' ? ['text', 'rich_text'] : ['text']
+    )
+    if (groups.length) {
+      blocks.push({
+        type: 'actions',
+        elements: [
+          {
+            type: 'static_select',
+            placeholder: {
+              type: 'plain_text',
+              text: ':heavy_plus_sign: Add a token',
+              emoji: true,
+            },
+            action_id: `input_token:${inputKey}`,
+            option_groups: groups,
+            initial_option: initial,
+          },
+        ],
+      })
+    }
   }
 
   return blocks
@@ -302,7 +344,7 @@ function getStepInputAccessory(
   if (!input) return
 
   if (input.type === 'user' || input.type === 'channel') {
-    const groups: {
+    const prependGroups: {
       label: PlainTextElement
       options: PlainTextOption[]
     }[] = [
@@ -318,7 +360,7 @@ function getStepInputAccessory(
     ]
 
     if (input.type === 'user') {
-      groups.push({
+      prependGroups.push({
         label: { type: 'plain_text', text: 'Workflow info' },
         options: [
           {
@@ -332,47 +374,67 @@ function getStepInputAccessory(
       })
     }
 
-    for (const step of workflowSteps.slice(0, index)) {
-      const spec = steps[step.type_id as keyof WorkflowStepMap]
-      if (!spec) continue
-      const options: PlainTextOption[] = []
-
-      let idx = 0
-      for (const [key, output] of Object.entries(spec.outputs)) {
-        idx++
-        if (output.type === input.type) {
-          options.push({
-            text: { type: 'plain_text', text: input.name },
-            value: JSON.stringify({
-              type: 'text',
-              text: `$!{outputs.${step.id}.${key}}`,
-            }),
-          })
-        }
-      }
-
-      if (options.length) {
-        groups.push({
-          label: { type: 'plain_text', text: `${idx}. ${spec.name}` },
-          options,
-        })
-      }
-    }
-
-    let initial: PlainTextOption | undefined = groups[0]?.options[0]
-    for (const group of groups) {
-      for (const option of group.options) {
-        if (JSON.parse(option.value!).text === step.inputs[inputKey]) {
-          initial = option
-        }
-      }
-    }
+    const { groups, initial } = getTokenOptionGroups(
+      workflowSteps.slice(0, index),
+      [input.type],
+      step.inputs[inputKey],
+      prependGroups
+    )
 
     return {
       type: 'static_select',
       action_id: `update_category:${workflow.id}:${step.id}:${inputKey}`,
       option_groups: groups,
-      initial_option: initial,
+      initial_option: initial || groups[0]!.options[0],
     }
   }
+}
+
+function getTokenOptionGroups(
+  allSteps: WorkflowStep<any>[],
+  types: DataType[],
+  currentValue?: string,
+  prependGroups: { label: PlainTextElement; options: PlainTextOption[] }[] = []
+) {
+  const groups: { label: PlainTextElement; options: PlainTextOption[] }[] = [
+    ...prependGroups,
+  ]
+
+  for (const step of allSteps) {
+    const spec = steps[step.type_id as keyof WorkflowStepMap]
+    if (!spec) continue
+    const options: PlainTextOption[] = []
+
+    let idx = 0
+    for (const [key, output] of Object.entries(spec.outputs)) {
+      idx++
+      if (types.includes(output.type)) {
+        options.push({
+          text: { type: 'plain_text', text: output.name },
+          value: JSON.stringify({
+            type: 'text',
+            text: `$!{outputs.${step.id}.${key}}`,
+          }),
+        })
+      }
+    }
+
+    if (options.length) {
+      groups.push({
+        label: { type: 'plain_text', text: `${idx}. ${spec.name}` },
+        options,
+      })
+    }
+  }
+
+  let initial: PlainTextOption | undefined = undefined
+  for (const group of groups) {
+    for (const option of group.options) {
+      if (JSON.parse(option.value!).text === currentValue) {
+        initial = option
+      }
+    }
+  }
+
+  return { groups, initial }
 }

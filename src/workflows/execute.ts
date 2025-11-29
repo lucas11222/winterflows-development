@@ -1,3 +1,4 @@
+import slack from '../clients/slack'
 import {
   addWorkflowExecution,
   deleteWorkflowExecutionById,
@@ -12,6 +13,8 @@ import type { ExecutionContext } from './context'
 import type { WorkflowStepMap } from './steps'
 import stepSpecs, { PENDING } from './steps'
 
+const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN!
+
 export interface WorkflowStep<Type extends keyof WorkflowStepMap> {
   id: string
   type_id: Type
@@ -21,7 +24,6 @@ export interface WorkflowStep<Type extends keyof WorkflowStepMap> {
 }
 
 export interface ExecutionState {
-  trigger_user_id: string
   outputs: Record<string, string>
 }
 
@@ -32,11 +34,9 @@ export async function startWorkflow(workflow: Workflow, user: string) {
 
   const execution = await addWorkflowExecution({
     workflow_id: workflow.id,
+    trigger_user_id: user,
     steps: workflow.steps,
-    state: JSON.stringify({
-      trigger_user_id: user,
-      outputs: {},
-    } satisfies ExecutionState),
+    state: JSON.stringify({ outputs: {} } satisfies ExecutionState),
   })
 
   await proceedWorkflow(execution)
@@ -53,49 +53,61 @@ export async function proceedWorkflow(execution: WorkflowExecution) {
 
   if (execution.step_index >= steps.length) {
     // workflow done
-    await deleteWorkflowExecutionById(execution.id)
     return
   }
 
-  const state = JSON.parse(execution.state) as ExecutionState
-  const step = steps[execution.step_index]!
-  const spec = stepSpecs[step.type_id as keyof WorkflowStepMap]
-  if (!spec) {
-    throw new Error(`Step \`${step.type_id}\` not found`)
-  }
-
-  const replacements: Record<string, string> = {
-    '$!{ctx.trigger_user_id}': state.trigger_user_id,
-    '$!{ctx.trigger_user_ping}': `<@${state.trigger_user_id}>`,
-  }
-  for (const [key, value] of Object.entries(state.outputs)) {
-    replacements[`$!{outputs.${key}}`] = value
-  }
-
-  const inputs: Record<string, string> = {}
-  for (const [key, inputSpec] of Object.entries(spec.inputs)) {
-    let value = step.inputs[key]!
-    if (inputSpec.type === 'rich_text') {
-      value =
-        value &&
-        JSON.stringify(replaceRichText(JSON.parse(value), replacements))
-    } else {
-      value = replaceText(value, replacements)
+  try {
+    const state = JSON.parse(execution.state) as ExecutionState
+    const step = steps[execution.step_index]!
+    const spec = stepSpecs[step.type_id as keyof WorkflowStepMap]
+    if (!spec) {
+      throw new Error(`Step \`${step.type_id}\` not found`)
     }
-    inputs[key] = value
-  }
 
-  const ctx: ExecutionContext = {
-    execution,
-    step_id: step.id,
-    trigger_user_id: state.trigger_user_id,
-    token: workflow.access_token!,
-    workflow,
-  }
+    const replacements: Record<string, string> = {
+      '$!{ctx.trigger_user_id}': execution.trigger_user_id,
+      '$!{ctx.trigger_user_ping}': `<@${execution.trigger_user_id}>`,
+    }
+    for (const [key, value] of Object.entries(state.outputs)) {
+      replacements[`$!{outputs.${key}}`] = value
+    }
 
-  const outputs = await spec.func(ctx, inputs as any)
-  if (outputs === PENDING) return
-  advanceWorkflow(execution.id, step.id, outputs)
+    const inputs: Record<string, string> = {}
+    for (const [key, inputSpec] of Object.entries(spec.inputs)) {
+      let value = step.inputs[key]!
+      if (inputSpec.type === 'rich_text') {
+        value =
+          value &&
+          JSON.stringify(replaceRichText(JSON.parse(value), replacements))
+      } else {
+        value = replaceText(value, replacements)
+      }
+      inputs[key] = value
+    }
+
+    const ctx: ExecutionContext = {
+      execution,
+      step_id: step.id,
+      trigger_user_id: execution.trigger_user_id,
+      token: workflow.access_token!,
+      workflow,
+    }
+
+    const outputs = await spec.func(ctx, inputs as any)
+    if (outputs === PENDING) return
+    await advanceWorkflow(execution.id, step.id, outputs)
+  } catch (e) {
+    console.error('Error occurred when executing workflow', e)
+    await slack.chat.postMessage({
+      token: SLACK_BOT_TOKEN,
+      channel: execution.trigger_user_id,
+      text: `A workflow (\`${
+        workflow.name
+      }\`) finished with an error. Please review the following error information.\n\n\`\`\`\n${String(
+        e
+      )}\n\`\`\``,
+    })
+  }
 }
 
 export async function advanceWorkflow(

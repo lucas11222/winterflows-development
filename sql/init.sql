@@ -14,6 +14,7 @@ CREATE INDEX IF NOT EXISTS idx_workflows_app_id ON workflows (app_id);
 
 CREATE TABLE IF NOT EXISTS workflow_executions (
     id INTEGER PRIMARY KEY NOT NULL GENERATED ALWAYS AS IDENTITY,
+    trigger_user_id TEXT NOT NULL,
     workflow_id INTEGER NOT NULL,
     steps TEXT NOT NULL,
     step_index INTEGER NOT NULL DEFAULT 0, -- index of next step

@@ -164,18 +164,18 @@ export function normalizeRichTextElements(
         continue
       }
     }
-    newElements.push(element)
+    newElements.push({ ...element })
   }
 
-  return elements
+  return newElements
 }
 
 function areStylesEqual(
   left: RichTextStyleable['style'],
   right: RichTextStyleable['style']
 ) {
-  if (left === undefined) return right === undefined
-  if (right === undefined) return left === undefined
+  if (!left) return !right
+  if (!right) return !left
   return (
     left.bold === right.bold &&
     left.code === right.code &&
@@ -183,4 +183,23 @@ function areStylesEqual(
     left.strike === right.strike &&
     left.underline === right.underline
   )
+}
+
+export function addTextToRichTextBlock(block: RichTextBlock, text: string) {
+  if (!block.elements.length)
+    block.elements.push({ type: 'rich_text_section', elements: [] })
+
+  const blockElement = block.elements[block.elements.length - 1]!
+  if (blockElement.type === 'rich_text_list') {
+    if (!blockElement.elements.length)
+      blockElement.elements.push({ type: 'rich_text_section', elements: [] })
+    const section = blockElement.elements[blockElement.elements.length - 1]!
+    section.elements.push({ type: 'text', text })
+    section.elements = normalizeRichTextElements(section.elements)
+  } else {
+    blockElement.elements.push({ type: 'text', text })
+    blockElement.elements = normalizeRichTextElements(blockElement.elements)
+  }
+
+  return block
 }

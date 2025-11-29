@@ -32,6 +32,7 @@ type StepSpec<
   Outputs extends Record<string, string> = Record<string, string>
 > = {
   name: string
+  category: string
   inputs: StepIOSpec<Inputs>
   outputs: StepIOSpec<Outputs>
 }
@@ -93,6 +94,7 @@ registerTriggerFunction('steps.delay.restart', async (trigger) => {
 const steps: Record<string, WorkflowStepSpec<any, any>> = {
   'test-dm-user': defineStep(sendMessageToUser, {
     name: 'Send a message to a person',
+    category: 'Messages',
     inputs: {
       user_id: { name: 'User', required: true, type: 'user' },
       message: { name: 'Message', required: true, type: 'rich_text' },
@@ -107,6 +109,7 @@ const steps: Record<string, WorkflowStepSpec<any, any>> = {
   }),
   delay: defineStep(delayWorkflow, {
     name: 'Delay execution',
+    category: 'Utilities',
     inputs: {
       ms: { name: 'Time (in ms)', required: true, type: 'text' },
     },

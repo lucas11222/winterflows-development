@@ -28,7 +28,7 @@ export async function getWorkflowByAppId(appId: string) {
 export async function getWorkflowsByCreator(creatorUserId: string) {
   const result = await sql<
     Workflow[]
-  >`SELECT * FROM workflows WHERE creator_user_id = ${creatorUserId}`
+  >`SELECT * FROM workflows WHERE creator_user_id = ${creatorUserId} ORDER BY id DESC`
   return result
 }
 

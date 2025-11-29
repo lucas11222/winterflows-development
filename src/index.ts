@@ -181,7 +181,10 @@ Bun.serve({
           token = res.access_token!
         } catch (e) {
           console.error('Error redeeming code for token', e)
-          return new Response('The OAuth code is invalid', { status: 400 })
+          return new Response(
+            "The OAuth code is invalid. Please try clicking the authentication link in @Winterflows's App Home again. If the problem persists, please contact the devs for assistance.",
+            { status: 400 }
+          )
         }
 
         workflow.access_token = token

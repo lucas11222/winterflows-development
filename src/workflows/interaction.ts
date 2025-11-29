@@ -11,11 +11,11 @@ import {
   type Workflow,
 } from '../database/workflows'
 import { generateRandomId } from '../utils/formatting'
+import { addTextToRichTextBlock, respond } from '../utils/slack'
 import { getWorkflowSteps } from '../utils/workflows'
 import { generateStepEditView, updateHomeTab } from './blocks'
 import { startWorkflow, type WorkflowStep } from './execute'
 import stepSpecs, { type WorkflowStepMap } from './steps'
-import { respond } from '../utils/slack'
 
 export async function handleInteraction(
   interaction: SlackAction | SlackViewAction
@@ -100,10 +100,10 @@ export async function handleInteraction(
 
       if (action.type !== 'static_select') return
 
-      const { w: id, s: stepId } = JSON.parse(action.selected_option.value) as {
-        w: number
-        s: string
+      const { id } = JSON.parse(interaction.view!.private_metadata) as {
+        id: number
       }
+      const stepId = action.selected_option.value
       const spec = stepSpecs[stepId as keyof WorkflowStepMap]
       if (!spec) return
 
@@ -126,6 +126,67 @@ export async function handleInteraction(
       await updateWorkflow(workflow)
 
       await updateHomeTab(workflow, interaction.user.id)
+    } else if (action.action_id.startsWith('input_token:')) {
+      // the "Add token" select menu is used on a workflow step edit menu
+
+      if (action.type !== 'static_select') return
+
+      const [, inputKey] = action.action_id.split(':')
+      const { id, stepId } = JSON.parse(interaction.view!.private_metadata) as {
+        id: number
+        stepId: string
+      }
+
+      const workflow = await getWorkflowById(id)
+      if (!workflow || !workflow.access_token)
+        return respond(interaction, 'The workflow is not found!')
+      const steps = getWorkflowSteps(workflow)
+      const step = steps.find((s) => s.id === stepId)
+      if (!step) return respond(interaction, 'The workflow step is not found!')
+      const spec = stepSpecs[step.type_id]!
+      const input = spec.inputs[inputKey!]!
+
+      const textToAdd = JSON.parse(action.selected_option.value).text as string
+      const actionId = `update_input:${workflow.id}:${stepId}:${inputKey}`
+
+      let blockId: string = ''
+      for (const [id, values] of Object.entries(
+        interaction.view!.state!.values
+      )) {
+        if (values[actionId]) {
+          blockId = id
+          break
+        }
+      }
+      const currentValue = getInitialValueFromState(
+        interaction.view!.state!.values[blockId]![actionId]!
+      )
+
+      if (input.type === 'text') {
+        interaction.view!.state!.values[blockId]![actionId]!.value =
+          currentValue + textToAdd
+      } else if (input.type === 'rich_text') {
+        const block = addTextToRichTextBlock(currentValue, textToAdd)
+        interaction.view!.state!.values[blockId]![actionId]!.rich_text_value =
+          block
+        JSON.stringify(block)
+      }
+
+      const currentState: Record<string, any> = {}
+      for (const block of Object.values(interaction.view?.state.values || {})) {
+        for (const [actionId, value] of Object.entries(block)) {
+          if (!actionId.startsWith('update_input:')) continue
+          console.log(actionId, JSON.stringify(value))
+          currentState[actionId] = getInitialValueFromState(value)
+        }
+      }
+
+      await slack.views.update({
+        token: workflow.access_token,
+        view_id: interaction.view!.id,
+        view: await generateStepEditView(workflow, stepId!, currentState),
+      })
+      // await slack.views.
     }
   } else if (interaction.type === 'view_submission') {
     if (interaction.view.callback_id === 'step_edit') {
