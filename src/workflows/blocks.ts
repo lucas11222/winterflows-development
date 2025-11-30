@@ -1,4 +1,5 @@
 import type {
+  ActionsBlockElement,
   KnownBlock,
   ModalView,
   PlainTextElement,
@@ -12,15 +13,25 @@ import type { DataType, WorkflowStepMap } from './steps'
 import steps from './steps'
 import slack from '../clients/slack'
 import { generateRandomId, truncateText } from '../utils/formatting'
+import { getTriggersWhere } from '../database/triggers'
+import { sql } from 'bun'
 
 const { EXTERNAL_URL, SLACK_APP_ID } = process.env
 
-export async function updateHomeTab(workflow: Workflow, user: string) {
+export interface HomeTabBlockOptions {
+  triggerBlocks?: KnownBlock[]
+}
+
+export async function updateHomeTab(
+  workflow: Workflow,
+  user: string,
+  options: HomeTabBlockOptions = {}
+) {
   if (!workflow.access_token) return
 
   const blocks =
     user === workflow.creator_user_id
-      ? await generateWorkflowEditView(workflow)
+      ? await generateWorkflowEditView(workflow, options)
       : await generateWorkflowView(workflow)
 
   await slack.views.publish({
@@ -35,11 +46,62 @@ export async function updateHomeTab(workflow: Workflow, user: string) {
 }
 
 export async function generateWorkflowEditView(
-  workflow: Workflow
+  workflow: Workflow,
+  options: HomeTabBlockOptions
 ): Promise<KnownBlock[]> {
   const stepBlocks = getWorkflowSteps(workflow).flatMap((s, i) =>
     generateWorkflowStepBlocks(s, i)
   )
+
+  const trigger = (await getTriggersWhere(sql`workflow_id = ${workflow.id}`))[0]
+  const triggerType = trigger?.type || 'none'
+
+  const triggerOptions: PlainTextOption[] = [
+    {
+      text: { type: 'plain_text', text: 'Link / Manual' },
+      value: 'none',
+    },
+    {
+      text: { type: 'plain_text', text: 'Message' },
+      value: 'message',
+    },
+  ]
+  const triggerInitialOption = triggerOptions.find(
+    (o) => o.value === triggerType
+  )
+
+  const runButtons: ActionsBlockElement[] = []
+  if (triggerType === 'none') {
+    runButtons.push({
+      type: 'button',
+      text: { type: 'plain_text', text: 'Run workflow' },
+      action_id: 'run_workflow_home',
+      value: JSON.stringify({ id: workflow.id }),
+      style: 'primary',
+    })
+  }
+
+  const triggerActions: ActionsBlockElement[] = []
+  if (triggerType === 'message') {
+    triggerActions.push({
+      type: 'conversations_select',
+      placeholder: { type: 'plain_text', text: 'Channel to listen in' },
+      action_id: 'workflow_trigger_message_update',
+      initial_conversation: trigger!.val_string || undefined,
+    })
+  }
+
+  const triggerBlocks: KnownBlock[] = []
+  if (triggerType === 'none') {
+    triggerBlocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `Workflow link: <${EXTERNAL_URL}/workflow/${workflow.id}>`,
+      },
+    })
+  }
+  if (options.triggerBlocks) triggerBlocks.push(...options.triggerBlocks)
 
   return [
     {
@@ -48,43 +110,38 @@ export async function generateWorkflowEditView(
     },
     {
       type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: `${workflow.description}\n\n_Workflow link: <${EXTERNAL_URL}/workflow/${workflow.id}>_`,
-      },
+      text: { type: 'mrkdwn', text: workflow.description },
     },
     {
       type: 'actions',
       elements: [
-        {
-          type: 'button',
-          text: { type: 'plain_text', text: 'Run workflow' },
-          action_id: 'run_workflow_home',
-          value: JSON.stringify({ id: workflow.id }),
-          style: 'primary',
-        },
+        ...runButtons,
         {
           type: 'button',
           text: { type: 'plain_text', text: 'View all your workflows' },
           url: `slack://app?id=${SLACK_APP_ID}`,
         },
+      ],
+    },
+    { type: 'divider' },
+    {
+      type: 'header',
+      text: { type: 'plain_text', text: 'Trigger' },
+    },
+    {
+      type: 'actions',
+      elements: [
         {
           type: 'static_select',
           placeholder: { type: 'plain_text', text: 'Edit trigger' },
           action_id: 'edit_workflow_trigger',
-          options: [
-            {
-              text: { type: 'plain_text', text: 'Link (none)' },
-              value: 'none',
-            },
-            {
-              text: { type: 'plain_text', text: 'Message' },
-              value: 'message',
-            },
-          ],
+          options: triggerOptions,
+          initial_option: triggerInitialOption,
         },
+        ...triggerActions,
       ],
     },
+    ...triggerBlocks,
     { type: 'divider' },
     {
       type: 'header',
@@ -217,6 +274,9 @@ export async function generateStepEditView(
 
   const spec = steps[step.type_id as keyof WorkflowStepMap]!
 
+  const trigger = (await getTriggersWhere(sql`workflow_id = ${workflow.id}`))[0]
+  const triggerType = trigger?.type || 'none'
+
   const inputBlocks = Object.entries(spec.inputs).flatMap(([key, def]) => {
     let currentValue = step.inputs[key]
       ? `\`${step.inputs[key]}\``
@@ -230,9 +290,15 @@ export async function generateStepEditView(
             def.required ? ' _(required)_' : ''
           }\nCurrent: ${currentValue}`,
         },
-        accessory: getStepInputAccessory(workflow, stepIndex, key),
+        accessory: getStepInputAccessory(workflow, stepIndex, key, triggerType),
       },
-      ...generateStepInputBlocks(workflow, stepIndex, key, overrideValues),
+      ...generateStepInputBlocks(
+        workflow,
+        stepIndex,
+        key,
+        triggerType,
+        overrideValues
+      ),
     ] satisfies KnownBlock[]
   })
 
@@ -257,6 +323,7 @@ function generateStepInputBlocks(
   workflow: Workflow,
   index: number,
   inputKey: string,
+  triggerType: string,
   overrideValues: Record<string, any> = {}
 ): KnownBlock[] {
   const workflowSteps = getWorkflowSteps(workflow)
@@ -320,29 +387,11 @@ function generateStepInputBlocks(
     })
   }
   if (input.type === 'rich_text' || input.type === 'text') {
-    const prependGroups: {
-      label: PlainTextElement
-      options: PlainTextOption[]
-    }[] = [
-      {
-        label: { type: 'plain_text', text: 'Workflow info' },
-        options: [
-          {
-            text: { type: 'plain_text', text: '@user who used this workflow' },
-            value: JSON.stringify({
-              type: 'text',
-              text: '$!{ctx.trigger_user_ping}',
-            }),
-          },
-        ],
-      },
-    ]
-
     const { groups, initial } = getTokenOptionGroups(
       workflowSteps.slice(0, index),
+      triggerType,
       input.type === 'rich_text' ? ['text', 'rich_text'] : ['text'],
-      undefined,
-      prependGroups
+      undefined
     )
 
     if (groups.length) {
@@ -371,7 +420,8 @@ function generateStepInputBlocks(
 function getStepInputAccessory(
   workflow: Workflow,
   index: number,
-  inputKey: string
+  inputKey: string,
+  triggerType: string
 ): SectionBlockAccessory | undefined {
   const workflowSteps = getWorkflowSteps(workflow)
   const step = workflowSteps[index]!
@@ -396,23 +446,9 @@ function getStepInputAccessory(
       },
     ]
 
-    if (input.type === 'user') {
-      prependGroups.push({
-        label: { type: 'plain_text', text: 'Workflow info' },
-        options: [
-          {
-            text: { type: 'plain_text', text: 'User who used this workflow' },
-            value: JSON.stringify({
-              type: 'text',
-              text: '$!{ctx.trigger_user_id}',
-            }),
-          },
-        ],
-      })
-    }
-
     const { groups, initial } = getTokenOptionGroups(
       workflowSteps.slice(0, index),
+      triggerType,
       [input.type],
       step.inputs[inputKey],
       prependGroups
@@ -427,6 +463,7 @@ function getStepInputAccessory(
   } else if (input.type === 'message') {
     const { groups, initial } = getTokenOptionGroups(
       workflowSteps.slice(0, index),
+      triggerType,
       [input.type],
       step.inputs[inputKey]
     )
@@ -444,6 +481,7 @@ function getStepInputAccessory(
 
 function getTokenOptionGroups(
   allSteps: WorkflowStep<any>[],
+  triggerType: string,
   types: DataType[],
   currentValue?: string,
   prependGroups: { label: PlainTextElement; options: PlainTextOption[] }[] = []
@@ -451,6 +489,65 @@ function getTokenOptionGroups(
   const groups: { label: PlainTextElement; options: PlainTextOption[] }[] = [
     ...prependGroups,
   ]
+
+  console.log(triggerType, types)
+  const triggerOptions: PlainTextOption[] = []
+  // link triggers
+  if (triggerType === 'none' && types.includes('rich_text')) {
+    triggerOptions.push({
+      text: { type: 'plain_text', text: '@user who used this workflow' },
+      value: JSON.stringify({
+        type: 'text',
+        text: '$!{ctx.trigger_user_ping}',
+      }),
+    })
+  }
+  if (triggerType === 'none' && types.includes('user')) {
+    triggerOptions.push({
+      text: { type: 'plain_text', text: 'User who used this workflow' },
+      value: JSON.stringify({
+        type: 'text',
+        text: '$!{ctx.trigger_user_id}',
+      }),
+    })
+  }
+  // message triggers
+  if (triggerType === 'message' && types.includes('message')) {
+    triggerOptions.push({
+      text: {
+        type: 'plain_text',
+        text: 'Message that triggered this workflow',
+      },
+      value: JSON.stringify({ type: 'text', text: '$!{trigger.message}' }),
+    })
+  }
+  if (triggerType === 'message' && types.includes('user')) {
+    triggerOptions.push({
+      text: {
+        type: 'plain_text',
+        text: 'Sender of trigger message',
+      },
+      value: JSON.stringify({ type: 'text', text: '$!{trigger.message.user}' }),
+    })
+  }
+  if (triggerType === 'message' && types.includes('rich_text')) {
+    triggerOptions.push({
+      text: {
+        type: 'plain_text',
+        text: '@user who sent the trigger message',
+      },
+      value: JSON.stringify({
+        type: 'text',
+        text: '$!{trigger.message.user_ping}',
+      }),
+    })
+  }
+  if (triggerOptions.length) {
+    groups.push({
+      label: { type: 'plain_text', text: 'Workflow trigger' },
+      options: triggerOptions,
+    })
+  }
 
   for (const step of allSteps) {
     const spec = steps[step.type_id as keyof WorkflowStepMap]

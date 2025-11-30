@@ -37,6 +37,11 @@ export async function addTrigger(obj: Omit<Trigger, 'id'>) {
   return result[0]
 }
 
+export async function updateTrigger(trigger: Trigger) {
+  const payload = { ...trigger, id: undefined }
+  await sql`UPDATE triggers SET ${sql(payload)} WHERE id = ${trigger.id}`
+}
+
 export async function deleteTriggerById(id: number) {
   await sql`DELETE FROM triggers WHERE id = ${id}`
 }

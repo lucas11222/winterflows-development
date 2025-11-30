@@ -26,9 +26,12 @@ import stepSpecs, { type WorkflowStepMap } from './steps'
 import {
   deleteTriggerById,
   deleteTriggersByWorkflowId,
+  getTriggersWhere,
+  updateTrigger,
 } from '../database/triggers'
 import { createMessageTrigger } from '../triggers/create'
 import { registerTriggerFunction } from '../triggers/functions'
+import { sql } from 'bun'
 
 export async function handleInteraction(
   interaction: SlackAction | SlackViewAction
@@ -235,14 +238,57 @@ export async function handleInteraction(
       })
 
       if (trigger_type === 'message') {
-        // FIXME: don't hardcode the channel please
-        await createMessageTrigger('C0A158LFGSU', {
+        await createMessageTrigger('', {
           workflow_id: id,
           execution_id: null,
           func: 'workflow.execute.message',
           details: JSON.stringify({}),
         })
       }
+
+      await updateHomeTab(workflow, interaction.user.id)
+    } else if (action.action_id === 'workflow_trigger_message_update') {
+      // the channel dropdown is edited when trigger == "Message" on app home
+
+      if (action.type !== 'conversations_select') return
+
+      const { id } = JSON.parse(interaction.view!.private_metadata) as {
+        id: number
+      }
+      const workflow = await getWorkflowById(id)
+      if (!workflow || !workflow.access_token) return
+
+      const trigger = (await getTriggersWhere(sql`workflow_id = ${id}`))[0]
+      if (trigger?.type !== 'message') return
+
+      trigger.val_string = action.selected_conversation
+      await updateTrigger(trigger)
+
+      // maybe join the convo
+      let joinSuccess = false
+      try {
+        await slack.conversations.join({
+          token: workflow.access_token,
+          channel: action.selected_conversation,
+        })
+        joinSuccess = true
+      } catch (e) {
+        console.warn('Failed to join trigger conversation:', e)
+      }
+
+      await updateHomeTab(workflow, interaction.user.id, {
+        triggerBlocks: joinSuccess
+          ? []
+          : [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text: "Failed to join the selected channel. Maybe it's private? Please invite me to the channel manually for me to work!\n_Note: DMs aren't supported because you can't add a bot to a DM :(_",
+                },
+              },
+            ],
+      })
     }
   } else if (interaction.type === 'view_submission') {
     if (interaction.view.callback_id === 'step_edit') {
@@ -273,6 +319,13 @@ export async function handleInteraction(
 registerTriggerFunction(
   'workflow.execute.message',
   async (trigger, message: SlackEvent & { type: 'message' }) => {
+    // FIXME: more subtypes allowed?
+    if (
+      message.subtype &&
+      message.subtype !== 'file_share' &&
+      message.subtype !== 'me_message'
+    )
+      return
     const workflow = await getWorkflowById(trigger.workflow_id!)
     if (!workflow) return deleteTriggerById(trigger.id)
     await startWorkflow(workflow, workflow.creator_user_id, {
@@ -280,6 +333,8 @@ registerTriggerFunction(
         channel: message.channel,
         ts: message.ts,
       }),
+      'trigger.message.user': message.user,
+      'trigger.message.user_ping': `<@${message.user}>`,
     })
   }
 )
