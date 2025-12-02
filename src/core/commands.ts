@@ -18,7 +18,7 @@ export async function handleCommand(payload: SlashCommand) {
 async function handleCreateCommand(payload: SlashCommand) {
   const name = payload.text
   if (!name) {
-    return 'Please provide a name for the workflow.'
+    return 'Please try again, giving your workflow a frosty name!'
   }
 
   const configToken = await getActiveConfigToken()
@@ -53,7 +53,7 @@ async function handleCreateCommand(payload: SlashCommand) {
     url.searchParams.set('state', app.app_id!)
 
     await respond(payload, {
-      text: `Please visit <${url.toString()}|this link> and install the app to finish the workflow setup.`,
+      text: `To complete workflow setup, visit <${url.toString()}|this frosty link> and install the app.`,
     })
   })()
 }
@@ -63,8 +63,8 @@ async function handleRootCommand() {
     text: `\
 :hyper-dino-wave: Hi, and welcome to Winterflows!
 
-I am a replacement to Slack's workflows, since the winter of Slack workflows will soon dawn upon us...
+I'm here to replace Slack workflows as the long, cold winter of classic workflows settles in soon...
 
-To get started, <slack://app?id=${SLACK_APP_ID}|visit my app home>, or use the \`/winterflows-create\` command to create your first workflow!`,
+To get started, <slack://app?id=${SLACK_APP_ID}|head over to my snowy app home>, or use the \`/winterflows-create\` command to create your first frosty workflow!`,
   })
 }

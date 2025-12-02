@@ -145,7 +145,7 @@ export async function generateWorkflowEditView(
         {
           type: 'button',
           text: { type: 'plain_text', text: 'View all your workflows' },
-          url: `slack://app?id=${SLACK_APP_ID}`,
+          url: `slack://app?id=${SLACK_APP_ID}&tab=home`,
         },
       ],
     },

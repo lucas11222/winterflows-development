@@ -190,7 +190,7 @@ Bun.serve({
         workflow.access_token = token
         await updateWorkflow(workflow)
 
-        return Response.redirect(`slack://app?id=${workflow.app_id}`)
+        return Response.redirect(`slack://app?id=${workflow.app_id}&tab=home`)
       },
     },
 
@@ -199,7 +199,7 @@ Bun.serve({
       if (isNaN(id)) return new Response('Workflow not found', { status: 404 })
       const workflow = await getWorkflowById(id)
       if (!workflow) return new Response('Workflow not found', { status: 404 })
-      return Response.redirect(`slack://app?id=${workflow.app_id}`)
+      return Response.redirect(`slack://app?id=${workflow.app_id}&tab=home`)
     },
   },
   port: PORT,

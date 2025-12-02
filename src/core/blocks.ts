@@ -39,7 +39,7 @@ async function generateCoreHomeView(
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: 'Next-gen workflows, as the winter of Slack workflows arrives...',
+        text: 'Next-generation workflows, rising just as the long winter of Slack workflows begins... :snowflake:',
       },
     },
     { type: 'divider' },
@@ -87,7 +87,7 @@ async function generateCoreHomeView(
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: "You don't have any workflows yet. Use the `/winterflows-create` command to create one!",
+        text: "Looks like your workflow forest is still bare. Use the `/winterflows-create` command to grow your first snow-covered workflow!",
       },
     })
   } else {
@@ -97,7 +97,7 @@ async function generateCoreHomeView(
       element: {
         type: 'plain_text_input',
         action_id: 'search_workflows',
-        placeholder: { type: 'plain_text', text: 'Type here to search' },
+        placeholder: { type: 'plain_text', text: 'Type here to search through the snow...' },
         initial_value: search || undefined,
         dispatch_action_config: {
           trigger_actions_on: ['on_character_entered'],
@@ -148,7 +148,7 @@ async function generateCoreHomeView(
             {
               type: 'button',
               text: { type: 'plain_text', text: 'Edit' },
-              url: `slack://app?id=${workflow.app_id}`,
+              url: `slack://app?id=${workflow.app_id}&tab=home`,
             },
             ...runButtons,
             {
