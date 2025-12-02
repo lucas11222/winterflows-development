@@ -36,3 +36,15 @@ export async function createReactionTrigger(
     val_number: null,
   })
 }
+
+export async function createModalTrigger(
+  id: string,
+  trigger: Omit<Trigger, 'id' | 'type' | 'val_string' | 'val_number'>
+) {
+  await addTrigger({
+    ...trigger,
+    type: 'modal',
+    val_string: id,
+    val_number: null,
+  })
+}

@@ -7,4 +7,5 @@ export interface ExecutionContext {
   trigger_user_id: string
   token: string // same as workflow.access_token!
   workflow: Workflow
+  trigger_id?: string // the most recent one
 }

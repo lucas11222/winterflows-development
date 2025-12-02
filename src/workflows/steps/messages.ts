@@ -30,6 +30,22 @@ async function sendMessageToChannel(
   }
 }
 
+async function replyToMessage(
+  ctx: ExecutionContext,
+  { thread, message }: { thread: string; message: string }
+) {
+  const { channel, ts } = JSON.parse(thread)
+  const msg = await slack.chat.postMessage({
+    token: ctx.token,
+    channel,
+    thread_ts: ts,
+    blocks: [JSON.parse(message)],
+  })
+  return {
+    message: JSON.stringify({ channel: msg.channel!, ts: msg.ts! }),
+  }
+}
+
 async function addReactionToMessage(
   ctx: ExecutionContext,
   { message, emoji }: { message: string; emoji: string }
@@ -100,6 +116,17 @@ export default {
     category: 'Messages',
     inputs: {
       channel: { name: 'Channel', required: true, type: 'channel' },
+      message: { name: 'Message', required: true, type: 'rich_text' },
+    },
+    outputs: {
+      message: { name: 'Sent message', required: true, type: 'message' },
+    },
+  }),
+  'message-reply': defineStep(replyToMessage, {
+    name: 'Reply to a message in thread',
+    category: 'Messages',
+    inputs: {
+      thread: { name: 'Message to reply to', required: true, type: 'message' },
       message: { name: 'Message', required: true, type: 'rich_text' },
     },
     outputs: {

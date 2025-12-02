@@ -26,11 +26,15 @@ import stepSpecs, { type WorkflowStepMap } from './steps'
 import {
   deleteTriggerById,
   deleteTriggersByWorkflowId,
+  getTriggersByTypeAndString,
   getTriggersWhere,
   updateTrigger,
 } from '../database/triggers'
 import { createMessageTrigger, createReactionTrigger } from '../triggers/create'
-import { registerTriggerFunction } from '../triggers/functions'
+import {
+  executeTriggerFunction,
+  registerTriggerFunction,
+} from '../triggers/functions'
 import { sql } from 'bun'
 
 export async function handleInteraction(
@@ -77,7 +81,12 @@ export async function handleInteraction(
       const workflow = await getWorkflowById(id)
       if (!workflow) return respond(interaction, 'The workflow is not found!')
 
-      await startWorkflow(workflow, interaction.user.id)
+      await startWorkflow(
+        workflow,
+        interaction.user.id,
+        undefined,
+        interaction.trigger_id
+      )
     } else if (actionId === 'manage_step') {
       // the overflow menu to the right of a step on the edit page is clicked
 
@@ -392,6 +401,18 @@ export async function handleInteraction(
       }
 
       await updateHomeTab(workflow, interaction.user.id)
+    } else if (interaction.view.callback_id === 'trigger') {
+      // trigger trigger
+
+      const { id } = JSON.parse(interaction.view.private_metadata) as {
+        id: string
+      }
+
+      const triggers = await getTriggersByTypeAndString('modal', id)
+
+      await Promise.allSettled(
+        triggers.map((t) => executeTriggerFunction(t, interaction))
+      )
     }
   }
 }

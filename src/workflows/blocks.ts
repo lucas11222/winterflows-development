@@ -326,7 +326,9 @@ export async function generateStepEditView(
           type: 'mrkdwn',
           text: `*${def.name}*${
             def.required ? ' _(required)_' : ''
-          }\nCurrent: ${currentValue}`,
+          }\nCurrent: ${currentValue}${
+            def.description ? `\n\n${def.description}` : ''
+          }`,
         },
         accessory: getStepInputAccessory(workflow, stepIndex, key, triggerType),
       },
@@ -337,6 +339,7 @@ export async function generateStepEditView(
         triggerType,
         overrideValues
       ),
+      { type: 'divider' },
     ] satisfies KnownBlock[]
   })
 
@@ -383,6 +386,7 @@ function generateStepInputBlocks(
         initial_user: overrideValues[actionId] || currentValue || undefined,
         action_id: actionId,
       },
+      optional: !input.required,
     })
   }
   if (input.type === 'channel' && !currentValue.startsWith('$')) {
@@ -396,6 +400,7 @@ function generateStepInputBlocks(
           overrideValues[actionId] || currentValue || undefined,
         action_id: actionId,
       },
+      optional: !input.required,
     })
   }
   if (input.type === 'rich_text') {
@@ -410,6 +415,7 @@ function generateStepInputBlocks(
           (currentValue ? JSON.parse(currentValue) : undefined),
         action_id: actionId,
       },
+      optional: !input.required,
     })
   }
   if (input.type === 'text') {
@@ -422,6 +428,7 @@ function generateStepInputBlocks(
         initial_value: overrideValues[actionId] || currentValue || undefined,
         action_id: actionId,
       },
+      optional: !input.required,
     })
   }
   if (input.type === 'rich_text' || input.type === 'text') {

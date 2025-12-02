@@ -31,7 +31,8 @@ export interface ExecutionState {
 export async function startWorkflow(
   workflow: Workflow,
   user: string,
-  additionalCtx: Record<string, string> = {}
+  additionalCtx: Record<string, string> = {},
+  trigger_id?: string
 ) {
   if (!workflow.access_token) return
 
@@ -41,6 +42,7 @@ export async function startWorkflow(
     workflow_id: workflow.id,
     trigger_user_id: user,
     steps: workflow.steps,
+    trigger_id: trigger_id || null,
     state: JSON.stringify({
       outputs: {},
       additionalCtx,
@@ -100,13 +102,19 @@ export async function proceedWorkflow(execution: WorkflowExecution) {
       execution,
       step_id: step.id,
       trigger_user_id: execution.trigger_user_id,
+      trigger_id: execution.trigger_id || undefined,
       token: workflow.access_token!,
       workflow,
     }
 
     const outputs = await spec.func(ctx, inputs as any)
     if (outputs === PENDING) return
-    await advanceWorkflow(execution.id, step.id, outputs)
+    await advanceWorkflow(
+      execution.id,
+      step.id,
+      outputs,
+      ctx.trigger_id || null
+    )
   } catch (e) {
     console.error('Error occurred when executing workflow', e)
     await slack.chat.postMessage({
@@ -124,7 +132,8 @@ export async function proceedWorkflow(execution: WorkflowExecution) {
 export async function advanceWorkflow(
   executionId: number,
   stepId: string,
-  outputs: Record<string, string>
+  outputs: Record<string, string>,
+  trigger_id?: string | null
 ) {
   const execution = await getWorkflowExecutionById(executionId)
   if (!execution) return
@@ -148,6 +157,9 @@ export async function advanceWorkflow(
 
   execution.step_index++
   execution.state = JSON.stringify(state)
+  if (trigger_id !== undefined) {
+    execution.trigger_id = trigger_id
+  }
   await updateWorkflowExecution(execution)
 
   proceedWorkflow(execution)

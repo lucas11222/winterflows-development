@@ -3,8 +3,6 @@ import { registerTriggerFunction } from '../../triggers/functions'
 import type { ExecutionContext } from '../context'
 import { advanceWorkflow } from '../execute'
 
-import messagesSteps from './messages'
-
 export const PENDING = Symbol.for('Winterflows.PENDING')
 export type PENDING = typeof PENDING
 
@@ -58,6 +56,9 @@ export function defineStep<
 
 // steps
 
+import formsSteps from './forms'
+import messagesSteps from './messages'
+
 async function delayWorkflow(ctx: ExecutionContext, { ms }: { ms: string }) {
   const time = parseFloat(ms)
   if (isNaN(time)) {
@@ -82,6 +83,7 @@ registerTriggerFunction('steps.delay.restart', async (trigger) => {
 
 const steps: Record<string, WorkflowStepSpec<any, any>> = {
   ...messagesSteps,
+  ...formsSteps,
   delay: defineStep(delayWorkflow, {
     name: 'Delay execution',
     category: 'Utilities',
