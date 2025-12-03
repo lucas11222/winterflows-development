@@ -495,7 +495,11 @@ function getStepInputAccessory(
   const input = spec.inputs[inputKey]
   if (!input) return
 
-  if (input.type === 'user' || input.type === 'channel') {
+  if (
+    input.type === 'user' ||
+    input.type === 'channel' ||
+    input.type === 'usergroup'
+  ) {
     const prependGroups: {
       label: PlainTextElement
       options: PlainTextOption[]
