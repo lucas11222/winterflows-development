@@ -29,6 +29,8 @@ export function generateManifest(
     )
   } else if (trigger === 'reaction') {
     extraEvents.push('reaction_added')
+  } else if (trigger === 'member_join') {
+    extraEvents.push('member_joined_channel')
   }
   return {
     display_information: {

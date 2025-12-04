@@ -34,5 +34,14 @@ export async function handleWorkflowEvent({
     await Promise.allSettled(
       triggers.map((t) => executeTriggerFunction(t, event))
     )
+  } else if (event.type === 'member_joined_channel') {
+    const triggers = await getTriggersByTypeAndString(
+      'member_join',
+      event.channel
+    )
+
+    await Promise.allSettled(
+      triggers.map((t) => executeTriggerFunction(t, event))
+    )
   }
 }

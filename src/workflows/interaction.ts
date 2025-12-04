@@ -5,7 +5,12 @@ import type {
   SlackViewAction,
   ViewStateValue,
 } from '@slack/bolt'
-import type { KnownBlock, RichTextBlock, SlackEvent } from '@slack/types'
+import type {
+  KnownBlock,
+  MemberJoinedChannelEvent,
+  RichTextBlock,
+  SlackEvent,
+} from '@slack/types'
 import slack from '../clients/slack'
 import {
   getWorkflowById,
@@ -29,9 +34,11 @@ import {
   getTriggersByTypeAndString,
   getTriggersWhere,
   updateTrigger,
+  type Trigger,
 } from '../database/triggers'
 import {
   createCronTrigger,
+  createMemberJoinTrigger,
   createMessageTrigger,
   createReactionTrigger,
 } from '../triggers/create'
@@ -242,6 +249,7 @@ async function handleInteractionInner(
         | 'message'
         | 'reaction'
         | 'cron'
+        | 'member_join'
 
       const { id } = JSON.parse(interaction.view!.private_metadata) as {
         id: number
@@ -279,6 +287,13 @@ async function handleInteractionInner(
           func: 'workflow.execute.cron',
           details: JSON.stringify({}),
         })
+      } else if (triggerType === 'member_join') {
+        await createMemberJoinTrigger('', {
+          workflow_id: id,
+          execution_id: null,
+          func: 'workflow.execute.member_join',
+          details: JSON.stringify({}),
+        })
       }
 
       await updateHomeTab(workflow, interaction.user.id)
@@ -296,39 +311,17 @@ async function handleInteractionInner(
       const trigger = (await getTriggersWhere(sql`workflow_id = ${id}`))[0]
       if (trigger?.type !== 'message') return
 
-      trigger.val_string = action.selected_conversation
-      await updateTrigger(trigger)
-
-      // maybe join the convo
-      let joinSuccess = false
-      try {
-        await slack.conversations.join({
-          token: workflow.access_token,
-          channel: action.selected_conversation,
-        })
-        joinSuccess = true
-      } catch (e) {
-        console.warn('Failed to join trigger conversation:', e)
-      }
-
-      await updateHomeTab(workflow, interaction.user.id, {
-        triggerBlocks: joinSuccess
-          ? []
-          : [
-              {
-                type: 'section',
-                text: {
-                  type: 'mrkdwn',
-                  text: "Failed to join the selected channel. Maybe it's private? Please invite me to the channel manually for me to work!\n_Note: DMs aren't supported because you can't add a bot to a DM :(_",
-                },
-              },
-            ],
-      })
+      await updateTriggerAndJoin(
+        interaction,
+        workflow,
+        trigger,
+        action.selected_conversation,
+        action.selected_conversation
+      )
     } else if (
       action.action_id === 'workflow_trigger_reaction_update_channel'
     ) {
       // the channel dropdown is edited when trigger == "Reaction" on app home
-      // TODO: merge this with the above code
 
       if (action.type !== 'conversations_select') return
 
@@ -338,39 +331,18 @@ async function handleInteractionInner(
       const workflow = await getWorkflowById(id)
       if (!workflow || !workflow.access_token) return
 
-      const trigger = (await getTriggersWhere(sql`workflow_id = ${id}`))[0]
+      const trigger = (
+        await getTriggersWhere(sql`workflow_id = ${workflow.id}`)
+      )[0]
       if (trigger?.type !== 'reaction') return
 
-      trigger.val_string = `${action.selected_conversation}|${
-        trigger.val_string?.split('|')[1]
-      }`
-      await updateTrigger(trigger)
-
-      // maybe join the convo
-      let joinSuccess = false
-      try {
-        await slack.conversations.join({
-          token: workflow.access_token,
-          channel: action.selected_conversation,
-        })
-        joinSuccess = true
-      } catch (e) {
-        console.warn('Failed to join trigger conversation:', e)
-      }
-
-      await updateHomeTab(workflow, interaction.user.id, {
-        triggerBlocks: joinSuccess
-          ? []
-          : [
-              {
-                type: 'section',
-                text: {
-                  type: 'mrkdwn',
-                  text: "Failed to join the selected channel. Maybe it's private? Please invite me to the channel manually for me to work!\n_Note: DMs aren't supported because you can't add a bot to a DM :(_",
-                },
-              },
-            ],
-      })
+      await updateTriggerAndJoin(
+        interaction,
+        workflow,
+        trigger,
+        `${action.selected_conversation}|${trigger.val_string?.split('|')[1]}`,
+        action.selected_conversation
+      )
     } else if (action.action_id === 'workflow_trigger_reaction_update_emoji') {
       // the emoji field is edited when trigger == "Reaction" on app home
 
@@ -432,6 +404,27 @@ async function handleInteractionInner(
       await updateHomeTab(workflow, interaction.user.id, {
         triggerBlocks,
       })
+    } else if (action.action_id === 'workflow_trigger_member_join_update') {
+      // the channel dropdown is edited when trigger == "User joined channel" on app home
+
+      if (action.type !== 'conversations_select') return
+
+      const { id } = JSON.parse(interaction.view!.private_metadata) as {
+        id: number
+      }
+      const workflow = await getWorkflowById(id)
+      if (!workflow || !workflow.access_token) return
+
+      const trigger = (await getTriggersWhere(sql`workflow_id = ${id}`))[0]
+      if (trigger?.type !== 'member_join') return
+
+      await updateTriggerAndJoin(
+        interaction,
+        workflow,
+        trigger,
+        action.selected_conversation,
+        action.selected_conversation
+      )
     }
   } else if (interaction.type === 'view_submission') {
     if (interaction.view.callback_id === 'step_edit') {
@@ -515,6 +508,55 @@ registerTriggerFunction('workflow.execute.cron', async (trigger) => {
   if (!workflow) return deleteTriggerById(trigger.id)
   await startWorkflow(workflow, workflow.creator_user_id)
 })
+
+registerTriggerFunction(
+  'workflow.execute.member_join',
+  async (trigger, event: MemberJoinedChannelEvent) => {
+    const workflow = await getWorkflowById(trigger.workflow_id!)
+    if (!workflow) return deleteTriggerById(trigger.id)
+    await startWorkflow(workflow, workflow.creator_user_id, {
+      'trigger.user': `${event.user}`,
+      'trigger.user_ping': `<@${event.user}>`,
+    })
+  }
+)
+
+async function updateTriggerAndJoin(
+  interaction: SlackAction,
+  workflow: Workflow,
+  trigger: Trigger,
+  text: string,
+  channel: string
+) {
+  trigger.val_string = text
+  await updateTrigger(trigger)
+
+  // maybe join the convo
+  let joinSuccess = false
+  try {
+    await slack.conversations.join({
+      token: workflow.access_token!,
+      channel,
+    })
+    joinSuccess = true
+  } catch (e) {
+    console.warn('Failed to join trigger conversation:', e)
+  }
+
+  await updateHomeTab(workflow, interaction.user.id, {
+    triggerBlocks: joinSuccess
+      ? []
+      : [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: "Failed to join the selected channel. Maybe it's private? Please invite me to the channel manually for me to work!\n_Note: DMs aren't supported because you can't add a bot to a DM :(_",
+            },
+          },
+        ],
+  })
+}
 
 async function handleDynamicInputs(interaction: BlockSuggestion) {
   const value = interaction.value

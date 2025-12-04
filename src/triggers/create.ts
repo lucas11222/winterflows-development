@@ -60,3 +60,15 @@ export async function createCronTrigger(
     val_number: null,
   })
 }
+
+export async function createMemberJoinTrigger(
+  channel: string,
+  trigger: Omit<Trigger, 'id' | 'type' | 'val_string' | 'val_number'>
+) {
+  await addTrigger({
+    ...trigger,
+    type: 'member_join',
+    val_string: channel,
+    val_number: null,
+  })
+}

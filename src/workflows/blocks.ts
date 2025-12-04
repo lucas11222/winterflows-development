@@ -62,8 +62,12 @@ export async function generateWorkflowEditView(
       value: 'none',
     },
     {
-      text: { type: 'plain_text', text: 'Schedule (cron)' },
+      text: { type: 'plain_text', text: 'Cron schedule' },
       value: 'cron',
+    },
+    {
+      text: { type: 'plain_text', text: 'User joins a channel' },
+      value: 'member_join',
     },
     {
       text: { type: 'plain_text', text: 'Message sent' },
@@ -103,6 +107,13 @@ export async function generateWorkflowEditView(
       placeholder: { type: 'plain_text', text: 'Channel to listen in' },
       action_id: 'workflow_trigger_reaction_update_channel',
       initial_conversation: trigger!.val_string?.split('|')[0] || undefined,
+    })
+  } else if (triggerType === 'member_join') {
+    triggerActions.push({
+      type: 'conversations_select',
+      placeholder: { type: 'plain_text', text: 'Channel to listen in' },
+      action_id: 'workflow_trigger_member_join_update',
+      initial_conversation: trigger!.val_string || undefined,
     })
   }
 
@@ -641,6 +652,20 @@ function getTokenOptionGroups(
       value: JSON.stringify({ type: 'text', text: '$!{trigger.user_ping}' }),
     })
   }
+  // member_join triggers
+  if (triggerType === 'member_join' && types.includes('user')) {
+    triggerOptions.push({
+      text: { type: 'plain_text', text: 'Person who joined the channel' },
+      value: JSON.stringify({ type: 'text', text: '$!{trigger.user}' }),
+    })
+  }
+  if (triggerType === 'member_join' && types.includes('rich_text')) {
+    triggerOptions.push({
+      text: { type: 'plain_text', text: '@user who joined the channel' },
+      value: JSON.stringify({ type: 'text', text: '$!{trigger.user_ping}' }),
+    })
+  }
+
   if (triggerOptions.length) {
     groups.push({
       label: { type: 'plain_text', text: 'Workflow trigger' },
