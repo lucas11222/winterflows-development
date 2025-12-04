@@ -5,7 +5,7 @@ import type {
   SlackViewAction,
   ViewStateValue,
 } from '@slack/bolt'
-import type { RichTextBlock, SlackEvent } from '@slack/types'
+import type { KnownBlock, RichTextBlock, SlackEvent } from '@slack/types'
 import slack from '../clients/slack'
 import {
   getWorkflowById,
@@ -30,12 +30,17 @@ import {
   getTriggersWhere,
   updateTrigger,
 } from '../database/triggers'
-import { createMessageTrigger, createReactionTrigger } from '../triggers/create'
+import {
+  createCronTrigger,
+  createMessageTrigger,
+  createReactionTrigger,
+} from '../triggers/create'
 import {
   executeTriggerFunction,
   registerTriggerFunction,
 } from '../triggers/functions'
 import { sql } from 'bun'
+import { validateCron } from '../utils/cron'
 
 export async function handleInteraction(
   interaction: SlackAction | SlackViewAction | BlockSuggestion
@@ -236,6 +241,7 @@ async function handleInteractionInner(
         | 'none'
         | 'message'
         | 'reaction'
+        | 'cron'
 
       const { id } = JSON.parse(interaction.view!.private_metadata) as {
         id: number
@@ -264,6 +270,13 @@ async function handleInteractionInner(
           workflow_id: id,
           execution_id: null,
           func: 'workflow.execute.reaction',
+          details: JSON.stringify({}),
+        })
+      } else if (triggerType === 'cron') {
+        await createCronTrigger('', {
+          workflow_id: id,
+          execution_id: null,
+          func: 'workflow.execute.cron',
           details: JSON.stringify({}),
         })
       }
@@ -378,6 +391,47 @@ async function handleInteractionInner(
       await updateTrigger(trigger)
 
       await updateHomeTab(workflow, interaction.user.id)
+    } else if (action.action_id === 'workflow_trigger_cron_update') {
+      // the cron expression is edited when trigger == "Cron" on app home
+      if (action.type !== 'plain_text_input') return
+
+      const { id } = JSON.parse(interaction.view!.private_metadata) as {
+        id: number
+      }
+      const workflow = await getWorkflowById(id)
+      if (!workflow || !workflow.access_token) return
+
+      const trigger = (await getTriggersWhere(sql`workflow_id = ${id}`))[0]
+      if (trigger?.type !== 'cron') return
+
+      const triggerBlocks: KnownBlock[] = []
+
+      const val = validateCron(action.value)
+      if (!val.ok) {
+        triggerBlocks.push({
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `Cron expression is invalid: ${val.message}`,
+          },
+        })
+      } else {
+        triggerBlocks.push({
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `Next execution is: <!date^${Math.floor(
+              val.next! / 1000
+            )}^{date_short_pretty} at {time_secs}|${val.next}>`,
+          },
+        })
+        trigger.val_string = action.value
+        await updateTrigger(trigger)
+      }
+
+      await updateHomeTab(workflow, interaction.user.id, {
+        triggerBlocks,
+      })
     }
   } else if (interaction.type === 'view_submission') {
     if (interaction.view.callback_id === 'step_edit') {
@@ -455,6 +509,12 @@ registerTriggerFunction(
     })
   }
 )
+
+registerTriggerFunction('workflow.execute.cron', async (trigger) => {
+  const workflow = await getWorkflowById(trigger.workflow_id!)
+  if (!workflow) return deleteTriggerById(trigger.id)
+  await startWorkflow(workflow, workflow.creator_user_id)
+})
 
 async function handleDynamicInputs(interaction: BlockSuggestion) {
   const value = interaction.value

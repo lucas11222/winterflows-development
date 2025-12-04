@@ -102,7 +102,7 @@ export async function getDMLink(user: string, token: string) {
 export async function getActiveConfigToken() {
   const token = await getConfigToken()
   if (!token) return
-  if (token.expires_at > Date.now()) return token.access_token
+  if (token.expires_at > Date.now() + 60 * 60 * 1000) return token.access_token
   try {
     const res = await slack.tooling.tokens.rotate({
       refresh_token: token.refresh_token,

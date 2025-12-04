@@ -48,3 +48,15 @@ export async function createModalTrigger(
     val_number: null,
   })
 }
+
+export async function createCronTrigger(
+  expr: string,
+  trigger: Omit<Trigger, 'id' | 'type' | 'val_string' | 'val_number'>
+) {
+  await addTrigger({
+    ...trigger,
+    type: 'cron',
+    val_string: expr,
+    val_number: null,
+  })
+}

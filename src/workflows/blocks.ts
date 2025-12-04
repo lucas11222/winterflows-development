@@ -62,6 +62,10 @@ export async function generateWorkflowEditView(
       value: 'none',
     },
     {
+      text: { type: 'plain_text', text: 'Schedule (cron)' },
+      value: 'cron',
+    },
+    {
       text: { type: 'plain_text', text: 'Message sent' },
       value: 'message',
     },
@@ -111,8 +115,7 @@ export async function generateWorkflowEditView(
         text: `Workflow link: <${EXTERNAL_URL}/workflow/${workflow.id}>`,
       },
     })
-  }
-  if (triggerType === 'reaction') {
+  } else if (triggerType === 'reaction') {
     triggerBlocks.push({
       type: 'input',
       label: {
@@ -124,6 +127,20 @@ export async function generateWorkflowEditView(
         type: 'plain_text_input',
         action_id: 'workflow_trigger_reaction_update_emoji',
         initial_value: trigger!.val_string?.split('|')[1] || undefined,
+      },
+    })
+  } else if (triggerType === 'cron') {
+    triggerBlocks.push({
+      type: 'input',
+      label: { type: 'plain_text', text: 'Cron expression (in UTC)' },
+      dispatch_action: true,
+      element: {
+        type: 'plain_text_input',
+        action_id: 'workflow_trigger_cron_update',
+        initial_value: trigger?.val_string || undefined,
+        dispatch_action_config: {
+          trigger_actions_on: ['on_enter_pressed'],
+        },
       },
     })
   }

@@ -10,7 +10,7 @@ import {
   updateWorkflow,
 } from './database/workflows'
 import { getVerifiedData } from './signature'
-import { timeTriggerTask } from './triggers/task'
+import { cronTriggerTask, timeTriggerTask } from './triggers/task'
 import { getActiveConfigToken, getDMLink, getUserLink } from './utils/slack'
 import { handleWorkflowEvent } from './workflows/events'
 import { handleInteraction } from './workflows/interaction'
@@ -214,5 +214,6 @@ Bun.serve({
 setInterval(getActiveConfigToken, 30 * 60 * 1000)
 getActiveConfigToken()
 timeTriggerTask()
+cronTriggerTask()
 
 console.log(`Server started on http://localhost:${PORT}`)
