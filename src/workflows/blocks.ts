@@ -13,7 +13,7 @@ import type { DataType, WorkflowStepMap } from './steps'
 import steps from './steps'
 import slack from '../clients/slack'
 import { generateRandomId, truncateText } from '../utils/formatting'
-import { getTriggersWhere } from '../database/triggers'
+import { getTriggersWhere, getWorkflowTrigger } from '../database/triggers'
 import { sql } from 'bun'
 
 const { EXTERNAL_URL, SLACK_APP_ID } = process.env
@@ -260,6 +260,11 @@ function generateWorkflowStepBlocks<T extends keyof WorkflowStepMap>(
   if (spec) {
     text += `${index + 1}. *${spec.name}*`
 
+    if (step.branching) {
+      const { left, op, right } = JSON.parse(step.branching)
+      text += `\n_Only runs if_ \`${left}\` ${op} \`${right}\``
+    }
+
     for (const [key, arg] of Object.entries(spec.inputs)) {
       const value = step.inputs[key] ? `\`${step.inputs[key]}\`` : '<no value>'
       text += `\n${arg.name}: ${value}`
@@ -282,6 +287,10 @@ function generateWorkflowStepBlocks<T extends keyof WorkflowStepMap>(
           {
             text: { type: 'plain_text', text: 'Delete' },
             value: JSON.stringify({ action: 'delete', id: step.id }),
+          },
+          {
+            text: { type: 'plain_text', text: 'Edit branching' },
+            value: JSON.stringify({ action: 'branch', id: step.id }),
           },
         ],
         action_id: 'manage_step',
@@ -710,4 +719,124 @@ function getTokenOptionGroups(
   }
 
   return { groups, initial }
+}
+
+export async function generateStepBranchView(
+  workflow: Workflow,
+  stepId: string,
+  overrideValues: { left?: string; op?: string; right?: string } = {}
+): Promise<ModalView> {
+  const steps = getWorkflowSteps(workflow)
+  const index = steps.findIndex((s) => s.id === stepId)!
+  const step = steps[index]!
+  const branching: { left: string; op: string; right: string } = step.branching
+    ? JSON.parse(step.branching)
+    : { left: '', op: '==', right: '' }
+
+  const trigger = await getWorkflowTrigger(workflow.id)
+  const triggerType = trigger?.type || 'none'
+
+  const opOptions: PlainTextOption[] = [
+    { text: { type: 'plain_text', text: '==' }, value: '==' },
+    { text: { type: 'plain_text', text: '!=' }, value: '!=' },
+  ]
+  const opInitial =
+    opOptions.find((o) => o.value === (overrideValues.op || branching.op)) ||
+    opOptions[0]!
+
+  const { groups: tokenGroups } = getTokenOptionGroups(
+    steps.slice(0, index),
+    triggerType,
+    ['text']
+  )
+  const generateTokenBlocks = (actionId: string): KnownBlock[] =>
+    tokenGroups.length
+      ? [
+          {
+            type: 'actions',
+            elements: [
+              {
+                type: 'static_select',
+                placeholder: {
+                  type: 'plain_text',
+                  text: ':heavy_plus_sign: Add a token',
+                  emoji: true,
+                },
+                action_id: actionId,
+                option_groups: tokenGroups,
+              },
+            ],
+          },
+        ]
+      : []
+  const leftTokenBlocks = generateTokenBlocks('step_branch_left_token')
+  const rightTokenBlocks = generateTokenBlocks('step_branch_right_token')
+
+  const blocks: KnownBlock[] = [
+    {
+      type: 'input',
+      label: { type: 'plain_text', text: 'LHS' },
+      block_id: 'step_branch_left',
+      element: {
+        type: 'plain_text_input',
+        action_id: 'value',
+        initial_value: overrideValues.left || branching.left || undefined,
+      },
+    },
+    ...leftTokenBlocks,
+    {
+      type: 'input',
+      label: { type: 'plain_text', text: 'Operator' },
+      block_id: 'step_branch_op',
+      element: {
+        type: 'static_select',
+        action_id: 'value',
+        options: opOptions,
+        initial_option: opInitial,
+      },
+    },
+    {
+      type: 'input',
+      label: { type: 'plain_text', text: 'RHS' },
+      block_id:
+        'step_branch_right' + (overrideValues.right ? generateRandomId() : ''),
+      element: {
+        type: 'plain_text_input',
+        action_id: 'value',
+        initial_value: overrideValues.right || branching.right || undefined,
+      },
+    },
+    ...rightTokenBlocks,
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          action_id: 'step_branch_remove',
+          text: { type: 'plain_text', text: 'Remove branching' },
+          style: 'danger',
+          confirm: {
+            title: { type: 'plain_text', text: 'Remove branching?' },
+            text: {
+              type: 'mrkdwn',
+              text: 'Are you sure you want to remove branching? This will permanently delete the branching rules on this step.',
+            },
+            confirm: { type: 'plain_text', text: 'Remove' },
+            deny: { type: 'plain_text', text: 'Cancel' },
+            style: 'danger',
+          },
+        },
+      ],
+    },
+  ]
+  console.log(JSON.stringify(blocks, null, 2))
+
+  return {
+    type: 'modal',
+    callback_id: 'step_branch_edit',
+    private_metadata: JSON.stringify({ id: workflow.id, stepId }),
+    title: { type: 'plain_text', text: 'Edit branching' },
+    submit: { type: 'plain_text', text: 'Save' },
+    blocks,
+  }
 }

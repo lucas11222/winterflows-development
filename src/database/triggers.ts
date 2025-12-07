@@ -30,6 +30,13 @@ export async function getTriggersWhere(where: SQL.Query<any>) {
   return result
 }
 
+export async function getWorkflowTrigger(workflowId: number) {
+  const result = await sql<
+    Trigger[]
+  >`SELECT * FROM triggers WHERE workflow_id = ${workflowId}`
+  return result[0]
+}
+
 export async function addTrigger(obj: Omit<Trigger, 'id'>) {
   const result = await sql<[Trigger]>`INSERT INTO triggers ${sql(
     obj

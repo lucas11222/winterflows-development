@@ -66,26 +66,7 @@ import channelSteps from './channels'
 import formsSteps from './forms'
 import messagesSteps from './messages'
 import usersSteps from './users'
-
-async function delayWorkflow(ctx: ExecutionContext, { ms }: { ms: string }) {
-  const time = parseFloat(ms)
-  if (isNaN(time)) {
-    throw new Error(`Failed to parse sleep duration \`${ms}\``)
-  }
-  await createTimeTrigger(Date.now() + time, {
-    workflow_id: null,
-    execution_id: ctx.execution.id,
-    func: 'steps.delay.restart',
-    details: ctx.step_id,
-  })
-  return PENDING
-  return {}
-}
-
-registerTriggerFunction('steps.delay.restart', async (trigger) => {
-  const stepId = trigger.details!
-  await advanceWorkflow(trigger.execution_id!, stepId, {})
-})
+import utilitiesSteps from './utilities'
 
 // end steps
 
@@ -94,14 +75,7 @@ const steps: Record<string, WorkflowStepSpec<any, any>> = {
   ...formsSteps,
   ...channelSteps,
   ...usersSteps,
-  delay: defineStep(delayWorkflow, {
-    name: 'Delay execution',
-    category: 'Utilities',
-    inputs: {
-      ms: { name: 'Time (in ms)', required: true, type: 'text' },
-    },
-    outputs: {},
-  }),
+  ...utilitiesSteps,
 }
 
 export default steps

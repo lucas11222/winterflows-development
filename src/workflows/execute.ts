@@ -18,6 +18,7 @@ const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN!
 export interface WorkflowStep<Type extends keyof WorkflowStepMap> {
   id: string
   type_id: Type
+  branching?: string
   inputs: {
     [K in keyof WorkflowStepMap[Type]['inputs']]: string
   }
@@ -105,6 +106,20 @@ export async function proceedWorkflow(execution: WorkflowExecution) {
       trigger_id: execution.trigger_id || undefined,
       token: workflow.access_token!,
       workflow,
+    }
+    if (step.branching) {
+      const values = JSON.parse(step.branching) as {
+        left: string
+        op: string
+        right: string
+      }
+      const left = replaceText(values.left, replacements)
+      const right = replaceText(values.right, replacements)
+      const val = values.op === '==' ? left === right : left !== right
+      if (!val) {
+        console.log(`workflow exec ${execution.id} end because branch`)
+        return
+      }
     }
 
     const outputs = await spec.func(ctx, inputs as any)

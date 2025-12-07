@@ -25,7 +25,11 @@ import {
   respond,
 } from '../utils/slack'
 import { getWorkflowSteps } from '../utils/workflows'
-import { generateStepEditView, updateHomeTab } from './blocks'
+import {
+  generateStepBranchView,
+  generateStepEditView,
+  updateHomeTab,
+} from './blocks'
 import { startWorkflow, type WorkflowStep } from './execute'
 import stepSpecs, { type WorkflowStepMap } from './steps'
 import {
@@ -124,7 +128,7 @@ async function handleInteractionInner(
 
       const { action: method, id: stepId } = JSON.parse(
         action.selected_option.value
-      ) as { action: 'edit' | 'delete'; id: string }
+      ) as { action: 'edit' | 'delete' | 'branch'; id: string }
 
       if (method === 'edit') {
         await slack.views.open({
@@ -132,7 +136,7 @@ async function handleInteractionInner(
           trigger_id: interaction.trigger_id,
           view: await generateStepEditView(workflow, stepId),
         })
-      } else {
+      } else if (method === 'delete') {
         const steps = getWorkflowSteps(workflow)
         const index = steps.findIndex((s) => s.id === stepId)
         if (index < 0) return
@@ -142,6 +146,12 @@ async function handleInteractionInner(
         await updateWorkflow(workflow)
 
         await updateHomeTab(workflow, interaction.user.id)
+      } else if (method === 'branch') {
+        await slack.views.open({
+          token: workflow.access_token,
+          trigger_id: interaction.trigger_id,
+          view: await generateStepBranchView(workflow, stepId),
+        })
       }
     } else if (actionId === 'new_step') {
       // the "Add a step" select menu on the workflow edit page was edited
@@ -223,7 +233,6 @@ async function handleInteractionInner(
         )
         interaction.view!.state!.values[blockId]![actionId]!.rich_text_value =
           block
-        JSON.stringify(block)
       }
 
       const currentState: Record<string, any> = {}
@@ -425,6 +434,58 @@ async function handleInteractionInner(
         action.selected_conversation,
         action.selected_conversation
       )
+    } else if (
+      action.action_id === 'step_branch_left_token' ||
+      action.action_id === 'step_branch_right_token'
+    ) {
+      // a token is added in the LHS/RHS of the branch edit modal
+
+      if (action.type !== 'static_select') return
+
+      const { id, stepId } = JSON.parse(interaction.view!.private_metadata) as {
+        id: number
+        stepId: string
+      }
+      const workflow = await getWorkflowById(id)
+      if (!workflow || !workflow.access_token) return
+      const steps = getWorkflowSteps(workflow)
+      const step = steps.find((s) => s.id === stepId)
+      if (!step) return
+
+      const key =
+        action.action_id === 'step_branch_left_token' ? 'left' : 'right'
+      const blockId = key === 'left' ? 'step_branch_left' : 'step_branch_right'
+      const value =
+        interaction.view!.state.values[blockId]!.value!.value! +
+        (JSON.parse(action.selected_option.value).text as string)
+
+      await slack.views.open({
+        token: workflow.access_token,
+        trigger_id: interaction.trigger_id,
+        view: await generateStepBranchView(workflow, stepId, { [key]: value }),
+      })
+    } else if (action.action_id === 'step_branch_remove') {
+      // the "Remove branching" button is clicked in the edit modal
+
+      if (action.type !== 'button') return
+
+      const { id, stepId } = JSON.parse(interaction.view!.private_metadata) as {
+        id: number
+        stepId: string
+      }
+      const workflow = await getWorkflowById(id)
+      if (!workflow || !workflow.access_token) return
+      const steps = getWorkflowSteps(workflow)
+      const step = steps.find((s) => s.id === stepId)
+      if (!step) return
+
+      step.branching = undefined
+      workflow.steps = JSON.stringify(steps)
+      await updateWorkflow(workflow)
+
+      updateHomeTab(workflow, interaction.user.id)
+
+      return Response.json({ response_action: 'clear' })
     }
   } else if (interaction.type === 'view_submission') {
     if (interaction.view.callback_id === 'step_edit') {
@@ -460,6 +521,31 @@ async function handleInteractionInner(
       await Promise.allSettled(
         triggers.map((t) => executeTriggerFunction(t, interaction))
       )
+    } else if (interaction.view.callback_id === 'step_branch_edit') {
+      // the branching info is edited
+
+      const { id, stepId } = JSON.parse(interaction.view.private_metadata) as {
+        id: number
+        stepId: string
+      }
+      const workflow = await getWorkflowById(id)
+      if (!workflow || !workflow.access_token) return
+      const steps = getWorkflowSteps(workflow)
+      const step = steps.find((s) => s.id === stepId)
+      if (!step) return
+
+      const left = interaction.view.state.values.step_branch_left!.value!.value!
+      const op =
+        interaction.view.state.values.step_branch_op!.value!.selected_option!
+          .value
+      const right =
+        interaction.view.state.values.step_branch_right!.value!.value!
+
+      step.branching = JSON.stringify({ left, op, right })
+      workflow.steps = JSON.stringify(steps)
+      await updateWorkflow(workflow)
+
+      await updateHomeTab(workflow, interaction.user.id)
     }
   }
 }
