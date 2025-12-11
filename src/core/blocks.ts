@@ -1,4 +1,10 @@
-import type { ActionsBlockElement, HomeView, KnownBlock } from '@slack/types'
+import type {
+  ActionsBlockElement,
+  Button,
+  HomeView,
+  KnownBlock,
+  ModalView,
+} from '@slack/types'
 import { getWorkflowsByCreator, type Workflow } from '../database/workflows'
 import slack from '../clients/slack'
 import { truncateText } from '../utils/formatting'
@@ -41,6 +47,18 @@ async function generateCoreHomeView(
         type: 'mrkdwn',
         text: 'Next-generation workflows, rising just as the long winter of Slack workflows begins... :snowflake:',
       },
+    },
+    { type: 'divider' },
+    { type: 'header', text: { type: 'plain_text', text: 'Tools' } },
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          text: { type: 'plain_text', text: 'Message components generator' },
+          action_id: 'open_components_generator',
+        },
+      ],
     },
     { type: 'divider' },
   ]
@@ -87,7 +105,7 @@ async function generateCoreHomeView(
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: "Looks like your workflow forest is still bare. Use the `/winterflows-create` command to grow your first snow-covered workflow!",
+        text: 'Looks like your workflow forest is still bare. Use the `/winterflows-create` command to grow your first snow-covered workflow!',
       },
     })
   } else {
@@ -97,7 +115,10 @@ async function generateCoreHomeView(
       element: {
         type: 'plain_text_input',
         action_id: 'search_workflows',
-        placeholder: { type: 'plain_text', text: 'Type here to search through the snow...' },
+        placeholder: {
+          type: 'plain_text',
+          text: 'Type here to search through the snow...',
+        },
         initial_value: search || undefined,
         dispatch_action_config: {
           trigger_actions_on: ['on_character_entered'],
@@ -178,4 +199,121 @@ async function generateCoreHomeView(
   }
 
   return { type: 'home', blocks }
+}
+
+export async function generateComponentsHelperView(
+  count: number,
+  generated?: string
+): Promise<ModalView> {
+  const generatedBlocks: KnownBlock[] = generated
+    ? [
+        {
+          type: 'rich_text',
+          elements: [
+            {
+              type: 'rich_text_section',
+              elements: [
+                { type: 'text', text: 'Generated JSON', style: { bold: true } },
+                {
+                  type: 'text',
+                  text: '\nYou can copy this to any workflow step that accepts a JSON array of interactive buttons.',
+                },
+              ],
+            },
+            {
+              type: 'rich_text_preformatted',
+              elements: [{ type: 'text', text: generated }],
+            },
+          ],
+        },
+      ]
+    : []
+
+  const deleteButtons: Button[] =
+    count > 1
+      ? [
+          {
+            type: 'button',
+            action_id: 'component_helper_delete',
+            text: { type: 'plain_text', text: 'Delete last button' },
+            style: 'danger',
+          },
+        ]
+      : []
+
+  const blocks: KnownBlock[] = [
+    ...Array.from({ length: count }).flatMap(
+      (_, i) =>
+        [
+          {
+            type: 'input',
+            block_id: `${i}_name`,
+            label: { type: 'plain_text', text: `Button #${i + 1}` },
+            dispatch_action: true,
+            element: {
+              type: 'plain_text_input',
+              action_id: 'component_helper_update',
+              placeholder: {
+                type: 'plain_text',
+                text: 'Enter the text shown on the button',
+              },
+              max_length: 75,
+              dispatch_action_config: {
+                trigger_actions_on: ['on_character_entered'],
+              },
+            },
+          },
+          {
+            type: 'input',
+            block_id: `${i}_style`,
+            label: { type: 'plain_text', text: 'Style' },
+            optional: true,
+            dispatch_action: true,
+            element: {
+              type: 'static_select',
+              action_id: 'component_helper_update',
+              placeholder: {
+                type: 'plain_text',
+                text: 'Choose a button style',
+              },
+              options: [
+                {
+                  text: { type: 'plain_text', text: 'Primary' },
+                  value: 'primary',
+                },
+                {
+                  text: { type: 'plain_text', text: 'Danger' },
+                  value: 'danger',
+                },
+              ],
+            },
+          },
+        ] satisfies KnownBlock[]
+    ),
+    {
+      type: 'actions',
+      elements: [
+        {
+          type: 'button',
+          action_id: 'component_helper_add',
+          text: {
+            type: 'plain_text',
+            text: ':heavy_plus_sign: Add button',
+            emoji: true,
+          },
+        },
+        ...deleteButtons,
+      ],
+    },
+    ...generatedBlocks,
+  ]
+
+  return {
+    type: 'modal',
+    callback_id: 'components_helper',
+    private_metadata: JSON.stringify({ count }),
+    title: { type: 'plain_text', text: 'Generate components' },
+    submit: { type: 'plain_text', text: 'Done' },
+    blocks,
+  }
 }

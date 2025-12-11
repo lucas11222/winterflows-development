@@ -700,14 +700,12 @@ function getTokenOptionGroups(
     })
   }
 
-  for (const step of allSteps) {
+  for (const [idx, step] of allSteps.entries()) {
     const spec = steps[step.type_id as keyof WorkflowStepMap]
     if (!spec) continue
     const options: PlainTextOption[] = []
 
-    let idx = 0
     for (const [key, output] of Object.entries(spec.outputs)) {
-      idx++
       if (types.includes(output.type)) {
         options.push({
           text: { type: 'plain_text', text: output.name },
@@ -721,7 +719,7 @@ function getTokenOptionGroups(
 
     if (options.length) {
       groups.push({
-        label: { type: 'plain_text', text: `${idx}. ${spec.name}` },
+        label: { type: 'plain_text', text: `${idx + 1}. ${spec.name}` },
         options,
       })
     }
@@ -794,7 +792,7 @@ export async function generateStepBranchView(
     {
       type: 'input',
       label: { type: 'plain_text', text: 'LHS' },
-      block_id: 'step_branch_left',
+      block_id: `step_branch_left_${generateRandomId()}`,
       element: {
         type: 'plain_text_input',
         action_id: 'value',
@@ -816,8 +814,7 @@ export async function generateStepBranchView(
     {
       type: 'input',
       label: { type: 'plain_text', text: 'RHS' },
-      block_id:
-        'step_branch_right' + (overrideValues.right ? generateRandomId() : ''),
+      block_id: `step_branch_right_${generateRandomId()}`,
       element: {
         type: 'plain_text_input',
         action_id: 'value',

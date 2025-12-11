@@ -30,7 +30,7 @@ import {
   generateStepEditView,
   updateHomeTab,
 } from './blocks'
-import { startWorkflow, type WorkflowStep } from './execute'
+import { advanceWorkflow, startWorkflow, type WorkflowStep } from './execute'
 import stepSpecs, { type WorkflowStepMap } from './steps'
 import {
   deleteTriggerById,
@@ -52,6 +52,7 @@ import {
 } from '../triggers/functions'
 import { sql } from 'bun'
 import { validateCron } from '../utils/cron'
+import { getWorkflowExecutionById } from '../database/workflow_executions'
 
 export async function handleInteraction(
   interaction: SlackAction | SlackViewAction | BlockSuggestion
@@ -455,13 +456,22 @@ async function handleInteractionInner(
       const key =
         action.action_id === 'step_branch_left_token' ? 'left' : 'right'
       const blockId = key === 'left' ? 'step_branch_left' : 'step_branch_right'
-      const value =
-        interaction.view!.state.values[blockId]!.value!.value! +
-        (JSON.parse(action.selected_option.value).text as string)
+      let value = ''
 
-      await slack.views.open({
+      for (const [id, values] of Object.entries(
+        interaction.view!.state.values
+      )) {
+        if (id.startsWith(blockId)) {
+          value = Object.values(values)[0]!.value! || ''
+          break
+        }
+      }
+
+      value += JSON.parse(action.selected_option.value).text as string
+
+      await slack.views.update({
         token: workflow.access_token,
-        trigger_id: interaction.trigger_id,
+        view_id: interaction.view!.id,
         view: await generateStepBranchView(workflow, stepId, { [key]: value }),
       })
     } else if (action.action_id === 'step_branch_remove') {
@@ -486,6 +496,37 @@ async function handleInteractionInner(
       updateHomeTab(workflow, interaction.user.id)
 
       return Response.json({ response_action: 'clear' })
+    } else if (action.action_id.startsWith('message_button_')) {
+      // a button was pressed on a message sent by a workflow
+
+      if (
+        action.type !== 'button' ||
+        interaction.container.type !== 'message_attachment'
+      )
+        return
+
+      const ts = interaction.container.message_ts!
+      const channel = interaction.container.channel_id!
+
+      const {
+        execution: executionId,
+        step,
+        value,
+      } = JSON.parse(action.value!) as {
+        execution: number
+        step: string
+        value: string
+      }
+
+      await advanceWorkflow(
+        executionId,
+        step,
+        {
+          message: JSON.stringify({ channel, ts }),
+          component: value,
+        },
+        interaction.trigger_id
+      )
     }
   } else if (interaction.type === 'view_submission') {
     if (interaction.view.callback_id === 'step_edit') {
@@ -534,12 +575,20 @@ async function handleInteractionInner(
       const step = steps.find((s) => s.id === stepId)
       if (!step) return
 
-      const left = interaction.view.state.values.step_branch_left!.value!.value!
       const op =
         interaction.view.state.values.step_branch_op!.value!.selected_option!
           .value
-      const right =
-        interaction.view.state.values.step_branch_right!.value!.value!
+      let left = ''
+      let right = ''
+
+      for (const [blockId, values] of Object.entries(
+        interaction.view.state.values
+      )) {
+        if (blockId.startsWith('step_branch_left'))
+          left = Object.values(values)[0]!.value!
+        if (blockId.startsWith('step_branch_right'))
+          right = Object.values(values)[0]!.value!
+      }
 
       step.branching = JSON.stringify({ left, op, right })
       workflow.steps = JSON.stringify(steps)

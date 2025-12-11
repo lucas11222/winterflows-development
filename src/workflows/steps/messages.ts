@@ -1,48 +1,129 @@
+import type { Button, KnownBlock, MessageAttachment } from '@slack/types'
+import { defineStep, PENDING } from '.'
 import slack from '../../clients/slack'
 import type { ExecutionContext } from '../context'
-import { defineStep } from '.'
+import z from 'zod'
+
+const MessageComponents = z.array(
+  z.object({
+    name: z.string().min(1).max(75),
+    style: z.literal(['primary', 'danger']).optional(),
+  })
+)
+type MessageComponents = z.infer<typeof MessageComponents>
+
+function generateComponents(data: string, ctx: ExecutionContext): Button[] {
+  if (!data) return []
+
+  let parsed: any[]
+  try {
+    parsed = JSON.parse(data)
+  } catch {
+    throw new Error('The `components` parameter is not valid JSON.')
+  }
+
+  const components = MessageComponents.parse(parsed)
+
+  return components.map((c, i) => ({
+    type: 'button',
+    text: { type: 'plain_text', text: c.name, emoji: true },
+    action_id: `message_button_${i}`,
+    style: c.style,
+    value: JSON.stringify({
+      execution: ctx.execution.id,
+      step: ctx.step_id,
+      value: c.name,
+    }),
+  }))
+}
 
 async function sendMessageToUser(
   ctx: ExecutionContext,
-  { user_id, message }: { user_id: string; message: string }
+  {
+    user_id,
+    message,
+    components,
+  }: { user_id: string; message: string; components: string }
 ) {
+  const buttons = generateComponents(components, ctx)
+  const actionAttachments: MessageAttachment[] | undefined = buttons.length
+    ? [{ blocks: [{ type: 'actions', elements: buttons }] }]
+    : undefined
+
   const msg = await slack.chat.postMessage({
     token: ctx.token,
     channel: user_id,
     blocks: [JSON.parse(message)],
+    attachments: actionAttachments,
   })
+
+  if (buttons.length) {
+    return PENDING
+  }
+
   return {
     message: JSON.stringify({ channel: msg.channel!, ts: msg.ts! }),
+    component: '',
   }
 }
 
 async function sendMessageToChannel(
   ctx: ExecutionContext,
-  { channel, message }: { channel: string; message: string }
+  {
+    channel,
+    message,
+    components,
+  }: { channel: string; message: string; components: string }
 ) {
+  const buttons = generateComponents(components, ctx)
+  const actionAttachments: MessageAttachment[] | undefined = buttons.length
+    ? [{ blocks: [{ type: 'actions', elements: buttons }] }]
+    : undefined
+
   const msg = await slack.chat.postMessage({
     token: ctx.token,
     channel,
     blocks: [JSON.parse(message)],
+    attachments: actionAttachments,
   })
+
+  if (buttons.length) {
+    return PENDING
+  }
   return {
     message: JSON.stringify({ channel: msg.channel!, ts: msg.ts! }),
+    component: '',
   }
 }
 
 async function replyToMessage(
   ctx: ExecutionContext,
-  { thread, message }: { thread: string; message: string }
+  {
+    thread,
+    message,
+    components,
+  }: { thread: string; message: string; components: string }
 ) {
   const { channel, ts } = JSON.parse(thread)
+  const buttons = generateComponents(components, ctx)
+  const actionAttachments: MessageAttachment[] | undefined = buttons.length
+    ? [{ blocks: [{ type: 'actions', elements: buttons }] }]
+    : undefined
+
   const msg = await slack.chat.postMessage({
     token: ctx.token,
     channel,
     thread_ts: ts,
     blocks: [JSON.parse(message)],
+    attachments: actionAttachments,
   })
+
+  if (buttons.length) {
+    return PENDING
+  }
   return {
     message: JSON.stringify({ channel: msg.channel!, ts: msg.ts! }),
+    component: ''
   }
 }
 
@@ -106,9 +187,21 @@ export default {
     inputs: {
       user_id: { name: 'User', required: true, type: 'user' },
       message: { name: 'Message', required: true, type: 'rich_text' },
+      components: {
+        name: 'Interactive components',
+        required: false,
+        type: 'text',
+        description:
+          'Enter a JSON array of interactive buttons. You can use the helper on the App Home of Winterflows to help you build this array.',
+      },
     },
     outputs: {
       message: { name: 'Sent message', required: true, type: 'message' },
+      component: {
+        name: 'Name of button pressed',
+        required: false,
+        type: 'text',
+      },
     },
   }),
   'message-channel': defineStep(sendMessageToChannel, {
@@ -117,9 +210,21 @@ export default {
     inputs: {
       channel: { name: 'Channel', required: true, type: 'channel' },
       message: { name: 'Message', required: true, type: 'rich_text' },
+      components: {
+        name: 'Interactive components',
+        required: false,
+        type: 'text',
+        description:
+          'Enter a JSON array of interactive buttons. You can use the helper on the App Home of Winterflows to help you build this array.',
+      },
     },
     outputs: {
       message: { name: 'Sent message', required: true, type: 'message' },
+      component: {
+        name: 'Name of button pressed',
+        required: false,
+        type: 'text',
+      },
     },
   }),
   'message-reply': defineStep(replyToMessage, {
@@ -128,9 +233,21 @@ export default {
     inputs: {
       thread: { name: 'Message to reply to', required: true, type: 'message' },
       message: { name: 'Message', required: true, type: 'rich_text' },
+      components: {
+        name: 'Interactive components',
+        required: false,
+        type: 'text',
+        description:
+          'Enter a JSON array of interactive buttons. You can use the helper on the App Home of Winterflows to help you build this array.',
+      },
     },
     outputs: {
       message: { name: 'Sent message', required: true, type: 'message' },
+      component: {
+        name: 'Name of button pressed',
+        required: false,
+        type: 'text',
+      },
     },
   }),
   'react-message': defineStep(addReactionToMessage, {

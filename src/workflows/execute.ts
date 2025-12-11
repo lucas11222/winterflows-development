@@ -107,6 +107,7 @@ export async function proceedWorkflow(execution: WorkflowExecution) {
       token: workflow.access_token!,
       workflow,
     }
+    let skip = false
     if (step.branching) {
       const values = JSON.parse(step.branching) as {
         left: string
@@ -117,13 +118,18 @@ export async function proceedWorkflow(execution: WorkflowExecution) {
       const right = replaceText(values.right, replacements)
       const val = values.op === '==' ? left === right : left !== right
       if (!val) {
-        console.log(`workflow exec ${execution.id} end because branch`)
-        return
+        console.log(`workflow exec ${execution.id} skip because branch`)
+        skip = true
       }
     }
 
-    const outputs = await spec.func(ctx, inputs as any)
-    if (outputs === PENDING) return
+    let outputs: Record<string, string> | PENDING
+    if (!skip) {
+      outputs = await spec.func(ctx, inputs as any)
+      if (outputs === PENDING) return
+    } else {
+      outputs = {}
+    }
     await advanceWorkflow(
       execution.id,
       step.id,
