@@ -20,6 +20,20 @@ async function addUserToChannel(
   return {}
 }
 
+async function removeUserFromChannel(
+  ctx: ExecutionContext,
+  { channel, user }: { channel: string; user: string }
+) {
+  try {
+    await slack.conversations.kick({ token: ctx.token, channel, user })
+  } catch (e: any) {
+    if (e.data?.error !== 'not_in_channel') {
+      throw e
+    }
+  }
+  return {}
+}
+
 async function archiveChannel(
   ctx: ExecutionContext,
   { channel }: { channel: string }
@@ -58,6 +72,15 @@ async function createPrivateChannel(
 export default {
   'channel-invite': defineStep(addUserToChannel, {
     name: 'Add a user to a channel',
+    category: 'Channels',
+    inputs: {
+      channel: { name: 'Channel', type: 'channel', required: true },
+      user: { name: 'User', type: 'user', required: true },
+    },
+    outputs: {},
+  }),
+  'channel-kick': defineStep(removeUserFromChannel, {
+    name: 'Remove a user from a channel',
     category: 'Channels',
     inputs: {
       channel: { name: 'Channel', type: 'channel', required: true },
