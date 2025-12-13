@@ -303,6 +303,14 @@ function generateWorkflowStepBlocks<T extends keyof WorkflowStepMap>(
             value: JSON.stringify({ action: 'edit', id: step.id }),
           },
           {
+            text: { type: 'plain_text', text: 'Move up' },
+            value: JSON.stringify({ action: 'up', id: step.id }),
+          },
+          {
+            text: { type: 'plain_text', text: 'Move down' },
+            value: JSON.stringify({ action: 'down', id: step.id }),
+          },
+          {
             text: { type: 'plain_text', text: 'Delete' },
             value: JSON.stringify({ action: 'delete', id: step.id }),
           },

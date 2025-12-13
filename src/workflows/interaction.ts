@@ -52,7 +52,6 @@ import {
 } from '../triggers/functions'
 import { sql } from 'bun'
 import { validateCron } from '../utils/cron'
-import { getWorkflowExecutionById } from '../database/workflow_executions'
 
 export async function handleInteraction(
   interaction: SlackAction | SlackViewAction | BlockSuggestion
@@ -129,7 +128,7 @@ async function handleInteractionInner(
 
       const { action: method, id: stepId } = JSON.parse(
         action.selected_option.value
-      ) as { action: 'edit' | 'delete' | 'branch'; id: string }
+      ) as { action: 'edit' | 'delete' | 'branch' | 'up' | 'down'; id: string }
 
       if (method === 'edit') {
         await slack.views.open({
@@ -153,6 +152,28 @@ async function handleInteractionInner(
           trigger_id: interaction.trigger_id,
           view: await generateStepBranchView(workflow, stepId),
         })
+      } else if (method === 'up') {
+        const steps = getWorkflowSteps(workflow)
+        const index = steps.findIndex((s) => s.id === stepId)
+        if (index <= 0) return
+        const step = steps.splice(index, 1)[0]!
+        steps.splice(index - 1, 0, step)
+
+        workflow.steps = JSON.stringify(steps)
+        await updateWorkflow(workflow)
+
+        await updateHomeTab(workflow, interaction.user.id)
+      } else if (method === 'down') {
+        const steps = getWorkflowSteps(workflow)
+        const index = steps.findIndex((s) => s.id === stepId)
+        if (index < 0 || index === steps.length - 1) return
+        const step = steps.splice(index, 1)[0]!
+        steps.splice(index + 1, 0, step)
+
+        workflow.steps = JSON.stringify(steps)
+        await updateWorkflow(workflow)
+
+        await updateHomeTab(workflow, interaction.user.id)
       }
     } else if (actionId === 'new_step') {
       // the "Add a step" select menu on the workflow edit page was edited
