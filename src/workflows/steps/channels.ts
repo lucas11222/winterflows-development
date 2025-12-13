@@ -69,6 +69,37 @@ async function createPrivateChannel(
   return { id: channel.channel!.id! }
 }
 
+async function pinMessage(
+  ctx: ExecutionContext,
+  { message }: { message: string }
+) {
+  const { channel, ts } = JSON.parse(message)
+  try {
+    await slack.pins.add({
+      token: ctx.token,
+      channel,
+      timestamp: ts,
+    })
+  } catch (e: any) {
+    if (e.data?.error !== 'already_pinned') {
+      throw e
+    }
+  }
+  return {}
+}
+
+async function editTopic(
+  ctx: ExecutionContext,
+  { channel, topic }: { channel: string; topic: string }
+) {
+  await slack.conversations.setTopic({
+    token: ctx.token,
+    channel,
+    topic,
+  })
+  return {}
+}
+
 export default {
   'channel-invite': defineStep(addUserToChannel, {
     name: 'Add a user to a channel',
@@ -115,5 +146,22 @@ export default {
     outputs: {
       id: { name: 'Created channel', type: 'channel', required: true },
     },
+  }),
+  'pin-message': defineStep(pinMessage, {
+    name: 'Pin a message',
+    category: 'Channels',
+    inputs: {
+      message: { name: 'Message', type: 'message', required: true },
+    },
+    outputs: {},
+  }),
+  'set-channel-topic': defineStep(editTopic, {
+    name: 'Update the channel topic',
+    category: 'Channels',
+    inputs: {
+      channel: { name: 'Channel', type: 'channel', required: true },
+      topic: { name: 'Topic', type: 'text', required: true },
+    },
+    outputs: {},
   }),
 }

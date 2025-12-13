@@ -52,7 +52,30 @@ async function createUserGroup(
   return { group: res.usergroup!.id! }
 }
 
+async function getUserInfo(ctx: ExecutionContext, { user }: { user: string }) {
+  const res = await slack.users.info({
+    token: ctx.token,
+    user,
+  })
+  const username = res.user!.name!
+  const real = res.user!.profile!.real_name || res.user!.real_name || username
+  const display = res.user!.profile!.display_name || real
+  return { username, real, display }
+}
+
 export default {
+  'get-user-info': defineStep(getUserInfo, {
+    name: 'Get info about user',
+    category: 'Users',
+    inputs: {
+      user: { name: 'User', type: 'user', required: true },
+    },
+    outputs: {
+      username: { name: 'Username', type: 'text', required: true },
+      real: { name: 'Real name', type: 'text', required: true },
+      display: { name: 'Display name', type: 'text', required: true },
+    },
+  }),
   'usergroup-add': defineStep(addToUserGroup, {
     name: 'Add user to a user group',
     category: 'Users',
