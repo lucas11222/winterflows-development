@@ -79,14 +79,15 @@ export async function respond(
   const isText = typeof data === 'string'
   const contentType = isText ? 'text/plain' : 'application/json'
   const body = isText ? data : JSON.stringify(data)
-
-  return await fetch(event.response_url, {
+  const response = await fetch(event.response_url, {
     method: 'POST',
     body,
     headers: {
       'Content-Type': contentType,
     },
   })
+  console.log(response)
+  return response
 }
 
 export async function getUserLink(token: string) {
