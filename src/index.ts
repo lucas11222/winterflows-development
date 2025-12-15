@@ -82,6 +82,7 @@ Bun.serve({
     '/slack/command': {
       POST: async (req) => {
         const data = await getVerifiedData(req)
+        console.log("command!")
         if (!data.success) {
           console.warn(`Signature verification failed for command`)
           return NOT_FOUND
@@ -91,6 +92,9 @@ Bun.serve({
         ).toJSON() as SlashCommand
 
         const res = await handleCommand(payload)
+
+        console.log("sended!")
+        console.log(res)
 
         return typeof res === 'string'
           ? new Response(res)
